@@ -16,7 +16,17 @@ class CasinoActivity final : public Activity, private UiAppHost {
   bool allowsControlCenter() const override { return !dirty; }
 
  private:
-  enum class View : uint8_t { Lobby, Table, BetEntry, Rules, StorageError };
+  enum class View : uint8_t {
+    Lobby,
+    Table,
+    BetEntry,
+    Rules,
+    StorageError,
+    RoulettePicker,
+    RouletteOptions,
+    RouletteStake
+  };
+  enum class Game : uint8_t { Blackjack, Baccarat, Roulette };
   enum Control : int16_t {
     BLACKJACK,
     RULES,
@@ -46,7 +56,22 @@ class CasinoActivity final : public Activity, private UiAppHost {
     REVEAL_CARD,
     PRESET_BASE = 40,
     HAND_BASE = 50,
-    DIGIT_BASE = 60
+    DIGIT_BASE = 60,
+    ROULETTE = 100,
+    RULES_ROULETTE,
+    R_ADD,
+    R_CLEAR,
+    R_SPIN,
+    R_REVEAL,
+    R_REPEAT,
+    R_NEW,
+    R_ACCEPT,
+    R_PREVIOUS,
+    R_NEXT,
+    R_CATEGORY_BASE = 120,
+    R_TYPE_BASE = 130,
+    R_CHOICE_BASE = 150,
+    R_REMOVE_BASE = 180
   };
   static constexpr freeink::ui::ActionId ACTION_CONTROL = 1;
   static constexpr int64_t PRESETS[] = {1000, 2000, 4000, 8000};
@@ -68,8 +93,15 @@ class CasinoActivity final : public Activity, private UiAppHost {
   bool loadFailed = false;
   bool clockValid = false;
   bool buttonNavigation = false;
-  bool baccaratTable = false;
-  bool baccaratRules = false;
+  Game tableGame = Game::Blackjack;
+  Game rulesGame = Game::Blackjack;
+  uint8_t rouletteCategory = 0;
+  int roulettePage = 0;
+  int roulettePages = 1;
+  int rouletteListPage = 0;
+  int rouletteListPerPage = 1;
+  int rouletteChoicesPerPage = 12;
+  RouletteGame::Bet rouletteBet{};
   BaccaratGame::Bet baccaratBet = BaccaratGame::Bet::Banker;
 
   static void casinoScreen(UiScreen& screen, void* user);
@@ -84,6 +116,13 @@ class CasinoActivity final : public Activity, private UiAppHost {
   void drawBaccaratHand(UiScreen& screen, freeink::ui::Rect area, const BaccaratGame::Hand& hand, bool banker);
   void drawBaccaratBets(UiScreen& screen, freeink::ui::Rect area);
   void activateBaccarat(int control);
+  void activateRoulette(int control);
+  void buildRouletteBetting(UiScreen& screen);
+  void buildRouletteRound(UiScreen& screen);
+  void buildRoulettePicker(UiScreen& screen);
+  void buildRouletteStake(UiScreen& screen);
+  void drawRoulettePaging(UiScreen& screen, freeink::ui::Rect area, int page, int pages);
+  void chooseRouletteBet(RouletteGame::Bet bet);
   bool canPlaceBet(int64_t cents) const;
   void buildBetEntry(UiScreen& screen);
   void buildRules(UiScreen& screen);
