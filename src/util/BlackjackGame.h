@@ -63,6 +63,8 @@ class BlackjackGame {
   bool insurance(bool take);
   bool nextRound();
   bool applyDailyCredit(int32_t day);
+  bool settleExternalWager(int64_t wagerCents, int64_t returnCents);
+  bool creditExternalReturn(int64_t returnCents);
 
   bool canHit() const;
   bool canStand() const;

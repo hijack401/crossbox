@@ -13,11 +13,21 @@ constexpr char FILE_PATH[] = "/.crosspoint/casino.bin";
 constexpr char TEMP_PATH[] = "/.crosspoint/casino.tmp";
 constexpr char BACKUP_PATH[] = "/.crosspoint/casino.bak";
 constexpr uint32_t MAGIC = 0x41435043;  // CPCA, little endian.
-constexpr uint16_t VERSION = 1;
+constexpr uint16_t VERSION = 3;
 constexpr size_t HAND_BYTES = 16 + BlackjackGame::MAX_CARDS + 6;
-constexpr uint16_t PAYLOAD_BYTES =
+constexpr uint16_t LEGACY_PAYLOAD_BYTES =
     40 + 4 + BlackjackGame::SHOE_CARDS + 3 + (BlackjackGame::MAX_HANDS + 1) * HAND_BYTES + 3;
+constexpr uint16_t LEGACY_BACCARAT_BYTES = 16 + BaccaratGame::SHOE_CARDS + 3 + 8 + 3;
+constexpr uint16_t VERSION_2_PAYLOAD_BYTES = LEGACY_PAYLOAD_BYTES + LEGACY_BACCARAT_BYTES;
+constexpr uint16_t PAYLOAD_BYTES = VERSION_2_PAYLOAD_BYTES + 1;
+constexpr size_t LEGACY_FILE_BYTES = 8 + LEGACY_PAYLOAD_BYTES + 4;
+constexpr size_t VERSION_2_FILE_BYTES = 8 + VERSION_2_PAYLOAD_BYTES + 4;
 constexpr size_t FILE_BYTES = 8 + PAYLOAD_BYTES + 4;
+
+struct StoredState {
+  BlackjackGame::State blackjack;
+  BaccaratGame::State baccarat;
+};
 
 uint32_t updateCrc(uint32_t crc, uint8_t byte) {
   crc ^= byte;
@@ -51,7 +61,12 @@ class BinaryWriter {
     number(static_cast<uint8_t>(hand.result), 1);
   }
 
-  bool write(const BlackjackGame::State& state) {
+  void hand(const BaccaratGame::Hand& hand) {
+    for (const uint8_t card : hand.cards) number(card, 1);
+    number(hand.cardCount, 1);
+  }
+
+  bool write(const BlackjackGame::State& state, const BaccaratGame::State& baccarat) {
     number(MAGIC, 4);
     number(VERSION, 2);
     number(PAYLOAD_BYTES, 2);
@@ -69,6 +84,17 @@ class BinaryWriter {
     number(state.handCount, 1);
     number(state.activeHand, 1);
     number(static_cast<uint8_t>(state.phase), 1);
+    number(baccarat.wagerCents, 8);
+    number(baccarat.returnCents, 8);
+    for (const uint8_t card : baccarat.shoe) number(card, 1);
+    number(baccarat.shoePosition, 2);
+    number(baccarat.shoeReady, 1);
+    hand(baccarat.player);
+    hand(baccarat.banker);
+    number(static_cast<uint8_t>(baccarat.bet), 1);
+    number(static_cast<uint8_t>(baccarat.winner), 1);
+    number(static_cast<uint8_t>(baccarat.phase), 1);
+    number(baccarat.revealedCards, 1);
     number(crc ^ 0xffffffffU, 4, false);
     flush();
     return !failed;
@@ -89,7 +115,7 @@ class BinaryWriter {
 
 class BinaryReader {
  public:
-  explicit BinaryReader(HalFile& file) : file(file) {}
+  explicit BinaryReader(HalFile& file) : file(file), remaining(file.size()) {}
 
   uint64_t number(unsigned bytes, bool checksum = true) {
     uint64_t value = 0;
@@ -132,8 +158,19 @@ class BinaryReader {
     hand.result = static_cast<BlackjackGame::Result>(number(1));
   }
 
-  bool read(BlackjackGame::State& state) {
-    if (number(4) != MAGIC || number(2) != VERSION || number(2) != PAYLOAD_BYTES) return false;
+  void hand(BaccaratGame::Hand& hand) {
+    for (uint8_t& card : hand.cards) card = number(1);
+    hand.cardCount = number(1);
+  }
+
+  bool read(StoredState& snapshot) {
+    if (number(4) != MAGIC) return false;
+    const uint16_t version = number(2);
+    const uint16_t payloadBytes = number(2);
+    const uint16_t expectedPayload =
+        version == 1 ? LEGACY_PAYLOAD_BYTES : (version == 2 ? VERSION_2_PAYLOAD_BYTES : PAYLOAD_BYTES);
+    if (version < 1 || version > VERSION || payloadBytes != expectedPayload) return false;
+    auto& state = snapshot.blackjack;
     state.balanceCents = money();
     state.roundWagerCents = money();
     state.roundReturnCents = money();
@@ -150,33 +187,65 @@ class BinaryReader {
     state.handCount = number(1);
     state.activeHand = number(1);
     state.phase = static_cast<BlackjackGame::Phase>(number(1));
+    auto& baccarat = snapshot.baccarat;
+    if (version >= 2) {
+      baccarat.wagerCents = money();
+      baccarat.returnCents = money();
+      for (uint8_t& card : baccarat.shoe) card = number(1);
+      baccarat.shoePosition = number(2);
+      baccarat.shoeReady = number(1);
+      hand(baccarat.player);
+      hand(baccarat.banker);
+      baccarat.bet = static_cast<BaccaratGame::Bet>(number(1));
+      baccarat.winner = static_cast<BaccaratGame::Bet>(number(1));
+      baccarat.phase = static_cast<BaccaratGame::Phase>(number(1));
+      if (version == 2 && baccarat.phase != BaccaratGame::Phase::Betting &&
+          baccarat.phase != BaccaratGame::Phase::Settled)
+        return false;
+      baccarat.revealedCards = version == VERSION ? number(1)
+                                                  : (baccarat.phase == BaccaratGame::Phase::Settled
+                                                         ? baccarat.player.cardCount + baccarat.banker.cardCount
+                                                         : 0);
+    } else {
+      baccarat.wagerCents = baccarat.returnCents = 0;
+      std::memset(baccarat.shoe, 0, sizeof(baccarat.shoe));
+      baccarat.shoePosition = baccarat.shoeReady = 0;
+      baccarat.player = BaccaratGame::Hand{};
+      baccarat.banker = BaccaratGame::Hand{};
+      baccarat.bet = BaccaratGame::Bet::Player;
+      baccarat.winner = BaccaratGame::Bet::Tie;
+      baccarat.phase = BaccaratGame::Phase::Betting;
+      baccarat.revealedCards = 0;
+    }
     const uint32_t expected = crc ^ 0xffffffffU;
     return number(4, false) == expected && !failed && !remaining && offset == buffered &&
-           BlackjackGame::validateState(state);
+           BlackjackGame::validateState(state) && BaccaratGame::validateState(baccarat);
   }
 
  private:
   HalFile& file;
   uint8_t buffer[128]{};
-  size_t remaining = FILE_BYTES;
+  size_t remaining;
   size_t offset = 0;
   size_t buffered = 0;
   uint32_t crc = 0xffffffffU;
   bool failed = false;
 };
 
-bool readState(const char* path, BlackjackGame::State& state) {
+bool readState(const char* path, StoredState& state) {
   HalFile file;
-  if (!Storage.openFileForRead("CAS", path, file) || file.size() != FILE_BYTES) return false;
+  if (!Storage.openFileForRead("CAS", path, file) ||
+      (file.size() != FILE_BYTES && file.size() != VERSION_2_FILE_BYTES && file.size() != LEGACY_FILE_BYTES))
+    return false;
   BinaryReader reader(file);
   return reader.read(state);
 }
 
-bool writeState(const BlackjackGame::State& state) {
+bool writeState(const BlackjackGame::State& state, const BaccaratGame::State& baccarat) {
   HalFile file;
   if (!Storage.openFileForWrite("CAS", TEMP_PATH, file)) return false;
   BinaryWriter writer(file);
-  if (!writer.write(state)) return false;
+  if (!writer.write(state, baccarat)) return false;
   file.flush();
   // Close before reading back and renaming the temporary file.
   return file.close();
@@ -202,7 +271,38 @@ bool sameState(const BlackjackGame::State& left, const BlackjackGame::State& rig
   }
   return true;
 }
+
+bool sameState(const BaccaratGame::State& left, const BaccaratGame::State& right) {
+  return left.wagerCents == right.wagerCents && left.returnCents == right.returnCents &&
+         std::memcmp(left.shoe, right.shoe, sizeof(left.shoe)) == 0 && left.shoePosition == right.shoePosition &&
+         left.shoeReady == right.shoeReady && left.player.cardCount == right.player.cardCount &&
+         std::memcmp(left.player.cards, right.player.cards, sizeof(left.player.cards)) == 0 &&
+         left.banker.cardCount == right.banker.cardCount &&
+         std::memcmp(left.banker.cards, right.banker.cards, sizeof(left.banker.cards)) == 0 && left.bet == right.bet &&
+         left.winner == right.winner && left.phase == right.phase && left.revealedCards == right.revealedCards;
+}
 }  // namespace
+
+bool CasinoStore::dealBaccarat(const BaccaratGame::Bet bet, const int64_t wagerCents, const BaccaratGame::Random random,
+                               void* context) {
+  if (isReadOnly()) return false;
+  if (!baccaratGame.startRound(bet, wagerCents, blackjack.state().balanceCents, random, context)) return false;
+  if (!blackjack.settleExternalWager(wagerCents, 0)) {
+    LOG_ERR("CAS", "Invalid Baccarat wager");
+    return false;
+  }
+  return true;
+}
+
+bool CasinoStore::revealBaccarat() {
+  if (isReadOnly() || !baccaratGame.revealNext()) return false;
+  if (baccaratGame.state().phase == BaccaratGame::Phase::Settled &&
+      !blackjack.creditExternalReturn(baccaratGame.state().returnCents)) {
+    LOG_ERR("CAS", "Invalid Baccarat return");
+    return false;
+  }
+  return true;
+}
 
 bool CasinoStore::load() {
   status = LoadStatus::Error;
@@ -214,12 +314,13 @@ bool CasinoStore::load() {
   }
   if (!Storage.exists(FILE_PATH) && !Storage.exists(BACKUP_PATH) && !Storage.exists(TEMP_PATH)) {
     blackjack.reset();
+    baccaratGame.reset();
     status = LoadStatus::Empty;
     return true;
   }
 
   // Keep the live balance and round intact on failure without putting the shoe on the task stack.
-  auto candidate = makeUniqueNoThrow<BlackjackGame::State>();
+  auto candidate = makeUniqueNoThrow<StoredState>();
   if (!candidate) {
     LOG_ERR("CAS", "OOM loading casino state");
     return false;
@@ -227,7 +328,8 @@ bool CasinoStore::load() {
   static constexpr const char* PATHS[] = {FILE_PATH, BACKUP_PATH, TEMP_PATH};
   for (const char* path : PATHS) {
     if (!Storage.exists(path)) continue;
-    if (!readState(path, *candidate) || !blackjack.restore(*candidate)) {
+    if (!readState(path, *candidate) || !blackjack.restore(candidate->blackjack) ||
+        !baccaratGame.restore(candidate->baccarat)) {
       LOG_ERR("CAS", "Invalid or unreadable casino file: %s", path);
       continue;
     }
@@ -241,11 +343,12 @@ bool CasinoStore::load() {
 }
 
 bool CasinoStore::save() {
-  if (isReadOnly() || !Storage.ready() || !BlackjackGame::validateState(blackjack.state())) {
+  if (isReadOnly() || !Storage.ready() || !BlackjackGame::validateState(blackjack.state()) ||
+      !BaccaratGame::validateState(baccaratGame.state())) {
     LOG_ERR("CAS", "Cannot save an unavailable or invalid casino state");
     return false;
   }
-  auto verification = makeUniqueNoThrow<BlackjackGame::State>();
+  auto verification = makeUniqueNoThrow<StoredState>();
   if (!verification) {
     LOG_ERR("CAS", "OOM verifying casino state");
     return false;
@@ -257,8 +360,9 @@ bool CasinoStore::save() {
     }
     recoveredFromTemporary = false;
   }
-  if (!Storage.ensureDirectoryExists("/.crosspoint") || !writeState(blackjack.state()) ||
-      !readState(TEMP_PATH, *verification) || !sameState(blackjack.state(), *verification)) {
+  if (!Storage.ensureDirectoryExists("/.crosspoint") || !writeState(blackjack.state(), baccaratGame.state()) ||
+      !readState(TEMP_PATH, *verification) || !sameState(blackjack.state(), verification->blackjack) ||
+      !sameState(baccaratGame.state(), verification->baccarat)) {
     LOG_ERR("CAS", "Failed to write and verify casino state");
     return false;
   }

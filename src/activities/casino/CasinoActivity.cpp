@@ -22,6 +22,23 @@ constexpr StrId RULE_TEXT[] = {StrId::STR_CASINO_RULE_GOAL,   StrId::STR_CASINO_
                                StrId::STR_CASINO_RULE_SPLIT,  StrId::STR_CASINO_RULE_ACES,
                                StrId::STR_CASINO_RULE_INSURE, StrId::STR_CASINO_RULE_SURRENDER,
                                StrId::STR_CASINO_RULE_SAVE,   StrId::STR_CASINO_RULE_CREDIT};
+constexpr StrId BACCARAT_RULE_TEXT[] = {StrId::STR_BACCARAT_RULE_GOAL,    StrId::STR_BACCARAT_RULE_VALUES,
+                                        StrId::STR_BACCARAT_RULE_NATURAL, StrId::STR_BACCARAT_RULE_PLAYER,
+                                        StrId::STR_BACCARAT_RULE_BANKER,  StrId::STR_BACCARAT_RULE_BANKER_THIRD,
+                                        StrId::STR_BACCARAT_RULE_PAYOUT,  StrId::STR_BACCARAT_RULE_TIE,
+                                        StrId::STR_BACCARAT_RULE_SAVE,    StrId::STR_CASINO_RULE_CREDIT};
+
+const char* baccaratBetLabel(BaccaratGame::Bet bet) {
+  switch (bet) {
+    case BaccaratGame::Bet::Player:
+      return tr(STR_BACCARAT_PLAYER);
+    case BaccaratGame::Bet::Banker:
+      return tr(STR_BACCARAT_BANKER);
+    case BaccaratGame::Bet::Tie:
+      return tr(STR_BACCARAT_TIE);
+  }
+  return tr(STR_BACCARAT_TIE);
+}
 
 const char* resultLabel(Result result) {
   switch (result) {
@@ -95,6 +112,10 @@ void CasinoActivity::normalizeBet() {
   betCents = available >= BlackjackGame::MIN_BET_CENTS ? std::clamp<int64_t>(betCents, 100, available) : 100;
 }
 
+bool CasinoActivity::canPlaceBet(int64_t cents) const {
+  return baccaratTable ? store.baccarat().canBet(cents, store.game().state().balanceCents) : store.game().canBet(cents);
+}
+
 bool CasinoActivity::saveChanges() {
   dirty = true;
   if (store.save()) {
@@ -145,7 +166,7 @@ void CasinoActivity::goBack() {
     view = View::Table;
   } else if (view == View::Table) {
     view = View::Lobby;
-    selectedControl = BLACKJACK;
+    selectedControl = baccaratTable ? BACCARAT : BLACKJACK;
   } else {
     lock.unlock();
     onGoHome(HomeMenuItem::CASINO);
@@ -186,19 +207,32 @@ void CasinoActivity::activate(const int control) {
   }
   if (control == RULES && (view == View::Lobby || view == View::Table)) {
     returnView = view;
+    baccaratRules = baccaratTable && view == View::Table;
     view = View::Rules;
     rulesPage = 0;
   } else if (view == View::Rules) {
     if (control == NEXT_RULE) ++rulesPage;
     if (control == PREVIOUS_RULE) rulesPage = std::max(0, rulesPage - 1);
-  } else if (view == View::Lobby && control == BLACKJACK) {
+    if (control == RULES_BLACKJACK || control == RULES_BACCARAT) {
+      baccaratRules = control == RULES_BACCARAT;
+      rulesPage = 0;
+    }
+  } else if (view == View::Lobby && (control == BLACKJACK || control == BACCARAT)) {
+    baccaratTable = control == BACCARAT;
     view = View::Table;
     displayedHand = game.state().activeHand;
     normalizeBet();
-    selectedControl = game.state().phase == Phase::Betting     ? DEAL
-                      : game.state().phase == Phase::Settled   ? AGAIN
-                      : game.state().phase == Phase::Insurance ? DECLINE
-                                                               : HIT;
+    if (baccaratTable) {
+      const auto& state = store.baccarat().state();
+      if (state.phase != BaccaratGame::Phase::Betting) baccaratBet = state.bet;
+      selectedControl = state.phase == BaccaratGame::Phase::Betting   ? DEAL
+                        : state.phase == BaccaratGame::Phase::Settled ? AGAIN
+                                                                      : REVEAL_CARD;
+    } else
+      selectedControl = game.state().phase == Phase::Betting     ? DEAL
+                        : game.state().phase == Phase::Settled   ? AGAIN
+                        : game.state().phase == Phase::Insurance ? DECLINE
+                                                                 : HIT;
   } else if (view == View::BetEntry) {
     const size_t length = strlen(betInput);
     if (control >= DIGIT_BASE && control < DIGIT_BASE + 10 && length < sizeof(betInput) - 1) {
@@ -208,11 +242,13 @@ void CasinoActivity::activate(const int control) {
       }
     } else if (control == ERASE && length)
       betInput[length - 1] = '\0';
-    else if (control == ACCEPT_BET && game.canBet(enteredBet())) {
+    else if (control == ACCEPT_BET && canPlaceBet(enteredBet())) {
       betCents = enteredBet();
       view = View::Table;
       selectedControl = DEAL;
     }
+  } else if (view == View::Table && baccaratTable) {
+    activateBaccarat(control);
   } else if (view == View::Table) {
     if (game.state().phase == Phase::Betting) {
       if (control >= PRESET_BASE && control < PRESET_BASE + 4 && game.canBet(PRESETS[control - PRESET_BASE]))
@@ -274,6 +310,39 @@ void CasinoActivity::activate(const int control) {
     }
   }
   refresh();
+}
+
+void CasinoActivity::activateBaccarat(int control) {
+  auto& game = store.baccarat();
+  if (game.state().phase == BaccaratGame::Phase::Revealing) {
+    if (control == REVEAL_CARD && store.revealBaccarat()) {
+      selectedControl = game.state().phase == BaccaratGame::Phase::Settled ? AGAIN : REVEAL_CARD;
+      saveChanges();
+    }
+    return;
+  }
+  if (game.state().phase == BaccaratGame::Phase::Settled) {
+    if (control == AGAIN && game.nextRound()) {
+      normalizeBet();
+      selectedControl = DEAL;
+      saveChanges();
+    }
+    return;
+  }
+  if (control >= BET_PLAYER && control <= BET_TIE) {
+    baccaratBet = static_cast<BaccaratGame::Bet>(control - BET_PLAYER);
+  } else if (control >= PRESET_BASE && control < PRESET_BASE + 4 && canPlaceBet(PRESETS[control - PRESET_BASE])) {
+    betCents = PRESETS[control - PRESET_BASE];
+  } else if (control == CUSTOM) {
+    betInput[0] = '\0';
+    view = View::BetEntry;
+  } else if (control == MAX_BET) {
+    betCents = store.game().state().balanceCents / 100 * 100;
+    normalizeBet();
+  } else if (control == DEAL && store.dealBaccarat(baccaratBet, betCents, &CasinoActivity::randomWord)) {
+    selectedControl = REVEAL_CARD;
+    saveChanges();
+  }
 }
 
 void CasinoActivity::loop() {
@@ -456,6 +525,28 @@ void CasinoActivity::drawLobbyGame(UiScreen& screen, fui::Rect row, uint8_t game
   const auto ink = fui::Paint::solid(theme.bodyText.color);
   static constexpr StrId GAMES[] = {StrId::STR_CASINO_SLOTS, StrId::STR_CASINO_BLACKJACK, StrId::STR_CASINO_ROULETTE,
                                     StrId::STR_CASINO_BACCARAT};
+  if (game == 3) {
+    drawButton(screen, row, nullptr, BACCARAT);
+    const auto state = screen.frame().stateFor(ACTION_CONTROL, BACCARAT, buttonProps.state);
+    const auto foreground = buttonProps.styles.resolve(state).foreground;
+    auto text = fui::textStyleWithForeground(buttonProps.text, foreground);
+    text.align = fui::TextAlign::Left;
+    const int16_t side = std::min<int16_t>(theme.minTouchSize, row.height - theme.spaceMd * 2);
+    ui_casino::lobbyIcon(screen.target(),
+                         fui::Rect{static_cast<int16_t>(row.x + theme.spaceLg),
+                                   static_cast<int16_t>(row.y + (row.height - side) / 2), side, side},
+                         theme, game);
+    screen.target().text(fui::Rect{static_cast<int16_t>(row.x + side + theme.spaceLg * 2), row.y,
+                                   static_cast<int16_t>(row.width - side - theme.spaceLg * 4), row.height},
+                         tr(STR_CASINO_BACCARAT), text);
+    const int16_t x = row.right() - theme.spaceLg * 2;
+    const int16_t y = row.y + row.height / 2;
+    screen.target().line(fui::Point{x, static_cast<int16_t>(y - theme.spaceSm)},
+                         fui::Point{static_cast<int16_t>(x + theme.spaceSm), y}, 2, foreground);
+    screen.target().line(fui::Point{static_cast<int16_t>(x + theme.spaceSm), y},
+                         fui::Point{x, static_cast<int16_t>(y + theme.spaceSm)}, 2, foreground);
+    return;
+  }
   if (game != 1) {
     const int16_t side = std::min<int16_t>(theme.minTouchSize, row.height - theme.spaceMd * 2);
     ui_casino::lobbyIcon(screen.target(),
@@ -538,7 +629,9 @@ void CasinoActivity::buildTable(UiScreen& screen) {
   screen.target().line(fui::Point{header.x, static_cast<int16_t>(header.bottom() + theme.spaceSm)},
                        fui::Point{header.right(), static_cast<int16_t>(header.bottom() + theme.spaceSm)}, 1,
                        fui::Paint::solid(theme.bodyText.color));
-  if (store.game().state().phase == Phase::Betting)
+  if (baccaratTable && store.baccarat().state().phase != BaccaratGame::Phase::Betting)
+    buildBaccaratRound(screen);
+  else if (baccaratTable || store.game().state().phase == Phase::Betting)
     buildBetting(screen);
   else
     buildRound(screen);
@@ -547,9 +640,13 @@ void CasinoActivity::buildTable(UiScreen& screen) {
 void CasinoActivity::buildBetting(UiScreen& screen) {
   const auto& theme = screen.theme();
   const int16_t line = screen.target().lineHeight(theme.bodyText.font);
-  const auto deal = screen.takeBottom(theme.rowHeight, theme.spaceLg);
-  const auto custom = screen.takeBottom(theme.rowHeight, theme.spaceMd);
-  const auto presets = screen.takeBottom(theme.rowHeight, theme.spaceMd);
+  const bool compact = screen.contentRect().height < theme.rowHeight * 7;
+  const int16_t row = baccaratTable && compact ? theme.minTouchSize : theme.rowHeight;
+  const int16_t gap = baccaratTable && compact ? theme.spaceSm : theme.spaceMd;
+  const auto deal = screen.takeBottom(row, gap);
+  const auto custom = screen.takeBottom(row, gap);
+  const auto presets = screen.takeBottom(row, gap);
+  if (baccaratTable) drawBaccaratBets(screen, screen.takeBottom(std::max<int16_t>(row, line * 2 + theme.spaceSm), gap));
   if (store.game().state().balanceCents < 100) {
     drawLabel(screen, screen.contentRect(), tr(STR_CASINO_NO_FUNDS), false, fui::TextAlign::Center);
   } else {
@@ -584,14 +681,124 @@ void CasinoActivity::buildBetting(UiScreen& screen) {
     ui_casino::money(amount, sizeof(amount), PRESETS[i]);
     drawButton(screen,
                fui::Rect{static_cast<int16_t>(presets.x + i * (cell + theme.spaceSm)), presets.y, cell, presets.height},
-               amount, PRESET_BASE + i, betCents == PRESETS[i], store.game().canBet(PRESETS[i]));
+               amount, PRESET_BASE + i, betCents == PRESETS[i], canPlaceBet(PRESETS[i]));
   }
   const int16_t width = (custom.width - theme.spaceMd) / 2;
   drawButton(screen, fui::Rect{custom.x, custom.y, width, custom.height}, tr(STR_CASINO_CUSTOM), CUSTOM, false,
              store.game().state().balanceCents >= 100);
   drawButton(screen, fui::Rect{static_cast<int16_t>(custom.right() - width), custom.y, width, custom.height},
              tr(STR_CASINO_MAX), MAX_BET, false, store.game().state().balanceCents >= 100);
-  drawButton(screen, deal, tr(STR_CASINO_DEAL), DEAL, true, store.game().canBet(betCents));
+  drawButton(screen, deal, tr(STR_CASINO_DEAL), DEAL, canPlaceBet(betCents), canPlaceBet(betCents));
+}
+
+void CasinoActivity::drawBaccaratBets(UiScreen& screen, fui::Rect area) {
+  const auto& theme = screen.theme();
+  const int16_t width = (area.width - theme.spaceSm * 2) / 3;
+  const int16_t line = screen.target().lineHeight(theme.bodyText.font);
+  const int16_t smallLine = screen.target().lineHeight(theme.smallText.font);
+  static constexpr StrId PAYOUTS[] = {StrId::STR_BACCARAT_PLAYER_ODDS, StrId::STR_BACCARAT_BANKER_ODDS,
+                                      StrId::STR_BACCARAT_TIE_ODDS};
+  for (int i = 0; i < 3; ++i) {
+    const auto bet = static_cast<BaccaratGame::Bet>(i);
+    const fui::Rect cell{static_cast<int16_t>(area.x + i * (width + theme.spaceSm)), area.y, width, area.height};
+    drawButton(screen, cell, nullptr, BET_PLAYER + i, baccaratBet == bet);
+    const auto state = screen.frame().stateFor(ACTION_CONTROL, BET_PLAYER + i, buttonProps.state);
+    const auto foreground = buttonProps.styles.resolve(state).foreground;
+    auto label = fui::textStyleWithForeground(buttonProps.text, foreground);
+    label.align = fui::TextAlign::Center;
+    auto odds = fui::textStyleWithForeground(theme.smallText, foreground);
+    odds.align = fui::TextAlign::Center;
+    const int16_t top = cell.y + (cell.height - line - smallLine) / 2;
+    screen.target().text(fui::Rect{cell.x, top, cell.width, line}, baccaratBetLabel(bet), label);
+    screen.target().text(fui::Rect{cell.x, static_cast<int16_t>(top + line), cell.width, smallLine},
+                         I18N.get(PAYOUTS[i]), odds);
+  }
+}
+
+void CasinoActivity::drawBaccaratHand(UiScreen& screen, fui::Rect area, const BaccaratGame::Hand& hand, bool banker) {
+  const auto& theme = screen.theme();
+  const auto& state = store.baccarat().state();
+  const int16_t line = screen.target().lineHeight(theme.bodyText.font);
+  const bool complete = state.phase == BaccaratGame::Phase::Settled;
+  const bool winner = complete && state.winner == (banker ? BaccaratGame::Bet::Banker : BaccaratGame::Bet::Player);
+  const int16_t band = line + theme.spaceMd * 2;
+  const auto ink = fui::Paint::solid(theme.bodyText.color);
+  auto text = theme.bodyText;
+  text.bold = true;
+  if (winner) {
+    screen.target().fill(fui::Rect{area.x, area.y, area.width, band}, ink);
+    text.color = fui::invertedColor(text.color);
+  } else {
+    screen.target().stroke(fui::Rect{area.x, area.y, area.width, band}, ink, 1);
+  }
+  screen.target().text(
+      fui::Rect{static_cast<int16_t>(area.x + theme.spaceMd), area.y, static_cast<int16_t>(area.width / 2), band},
+      banker ? tr(STR_BACCARAT_BANKER) : tr(STR_BACCARAT_PLAYER), text);
+  if (complete) {
+    char total[8];
+    snprintf(total, sizeof(total), tr(STR_CASINO_TOTAL), BaccaratGame::value(hand));
+    text.align = fui::TextAlign::Right;
+    screen.target().text(fui::Rect{static_cast<int16_t>(area.x + area.width / 2), area.y,
+                                   static_cast<int16_t>(area.width / 2 - theme.spaceMd), band},
+                         total, text);
+  }
+  area.y += band + theme.spaceMd;
+  area.height -= band + theme.spaceMd;
+  if (area.empty()) return;
+  const int16_t cardWidth = std::min<int16_t>((area.width - theme.spaceMd * 2) / 3, area.height * 2 / 3);
+  const int16_t cardHeight = std::min<int16_t>(theme.rowHeight * 2, cardWidth * 3 / 2);
+  // Extra cards arrive only once the earlier cards have been turned over.
+  const uint8_t thirdCardTurn = banker ? 2 + state.player.cardCount : 4;
+  const uint8_t cards = !complete && state.revealedCards < thirdCardTurn ? 2 : hand.cardCount;
+  const int16_t start = area.x + (area.width - (cardWidth * cards + theme.spaceMd * (cards - 1))) / 2;
+  for (uint8_t i = 0; i < cards; ++i)
+    ui_casino::card(screen.target(),
+                    fui::Rect{static_cast<int16_t>(start + i * (cardWidth + theme.spaceMd)),
+                              static_cast<int16_t>(area.y + (area.height - cardHeight) / 2), cardWidth, cardHeight},
+                    theme, hand.cards[i], !store.baccarat().cardRevealed(banker, i));
+}
+
+void CasinoActivity::buildBaccaratRound(UiScreen& screen) {
+  const auto& theme = screen.theme();
+  const auto& state = store.baccarat().state();
+  const int16_t line = screen.target().lineHeight(theme.bodyText.font);
+  const bool compact = screen.contentRect().height < theme.rowHeight * 7;
+  const bool complete = state.phase == BaccaratGame::Phase::Settled;
+  drawButton(screen, screen.takeBottom(compact ? theme.minTouchSize : theme.rowHeight, theme.spaceMd),
+             complete ? tr(STR_CASINO_AGAIN) : tr(STR_BACCARAT_REVEAL_CARD), complete ? AGAIN : REVEAL_CARD, true);
+  const auto result = screen.takeBottom(line * 2 + theme.spaceMd, theme.spaceLg);
+  char amount[48];
+  char label[80];
+  if (complete) {
+    drawLabel(screen, fui::Rect{result.x, result.y, result.width, line},
+              state.winner == BaccaratGame::Bet::Player   ? tr(STR_BACCARAT_PLAYER_WINS)
+              : state.winner == BaccaratGame::Bet::Banker ? tr(STR_BACCARAT_BANKER_WINS)
+                                                          : tr(STR_BACCARAT_TIE),
+              true, fui::TextAlign::Center);
+    netMoney(amount, sizeof(amount), state.returnCents - state.wagerCents);
+    snprintf(label, sizeof(label), tr(STR_BACCARAT_RETURN),
+             state.returnCents > state.wagerCents    ? tr(STR_CASINO_WIN)
+             : state.returnCents == state.wagerCents ? tr(STR_CASINO_PUSH)
+                                                     : tr(STR_BACCARAT_LOSE),
+             amount);
+    drawLabel(screen, fui::Rect{result.x, static_cast<int16_t>(result.y + line + theme.spaceSm), result.width, line},
+              label, false, fui::TextAlign::Center);
+  }
+  ui_casino::money(amount, sizeof(amount), state.wagerCents);
+  snprintf(label, sizeof(label), tr(STR_BACCARAT_WAGER), baccaratBetLabel(state.bet), amount);
+  drawLabel(screen, screen.takeTop(line, theme.spaceLg), label, false, fui::TextAlign::Center);
+  const auto area = screen.contentRect();
+  if (area.width > area.height) {
+    const int16_t width = (area.width - theme.spaceLg) / 2;
+    drawBaccaratHand(screen, fui::Rect{area.x, area.y, width, area.height}, state.player, false);
+    drawBaccaratHand(screen, fui::Rect{static_cast<int16_t>(area.right() - width), area.y, width, area.height},
+                     state.banker, true);
+  } else {
+    const int16_t height = (area.height - theme.spaceLg) / 2;
+    drawBaccaratHand(screen, fui::Rect{area.x, area.y, area.width, height}, state.player, false);
+    drawBaccaratHand(screen, fui::Rect{area.x, static_cast<int16_t>(area.bottom() - height), area.width, height},
+                     state.banker, true);
+  }
 }
 
 void CasinoActivity::drawHand(UiScreen& screen, fui::Rect area, const BlackjackGame::Hand& hand, bool dealer) {
@@ -766,28 +973,39 @@ void CasinoActivity::buildBetEntry(UiScreen& screen) {
                : i == 11 ? ERASE
                          : DIGIT_BASE + digit);
   }
-  drawButton(screen, footer, tr(STR_CASINO_SET_BET), ACCEPT_BET, true, store.game().canBet(enteredBet()));
+  drawButton(screen, footer, tr(STR_CASINO_SET_BET), ACCEPT_BET, canPlaceBet(enteredBet()), canPlaceBet(enteredBet()));
 }
 
 void CasinoActivity::buildRules(UiScreen& screen) {
   const auto& theme = screen.theme();
   const int16_t line = screen.target().lineHeight(theme.bodyText.font);
   drawLabel(screen, screen.takeTop(line, theme.spaceMd), tr(STR_CASINO_RULES), true);
+  if (returnView == View::Lobby) {
+    const auto tabs = screen.takeTop(theme.minTouchSize, theme.spaceMd);
+    const int16_t width = (tabs.width - theme.spaceMd) / 2;
+    drawButton(screen, fui::Rect{tabs.x, tabs.y, width, tabs.height}, tr(STR_CASINO_BLACKJACK), RULES_BLACKJACK,
+               !baccaratRules);
+    drawButton(screen, fui::Rect{static_cast<int16_t>(tabs.right() - width), tabs.y, width, tabs.height},
+               tr(STR_CASINO_BACCARAT), RULES_BACCARAT, baccaratRules);
+  }
   const auto footer = screen.takeBottom(theme.rowHeight, theme.spaceMd);
-  const int ruleCount = sizeof(RULE_TEXT) / sizeof(RULE_TEXT[0]);
+  const StrId* rules = baccaratRules ? BACCARAT_RULE_TEXT : RULE_TEXT;
+  const int ruleCount = baccaratRules ? sizeof(BACCARAT_RULE_TEXT) / sizeof(BACCARAT_RULE_TEXT[0])
+                                      : sizeof(RULE_TEXT) / sizeof(RULE_TEXT[0]);
   // Page each rule in a measured band so translated text remains fully readable.
   auto text = theme.bodyText;
   text.maxLines = 20;
   int maxHeight = 0;
-  for (const auto key : RULE_TEXT)
+  for (int i = 0; i < ruleCount; ++i)
     maxHeight = std::max<int>(
-        maxHeight, fui::measureWrappedText(screen.target(), I18N.get(key), text, screen.contentRect().width).height);
-  const int16_t height = std::max<int>(line, maxHeight + theme.spaceMd);
+        maxHeight,
+        fui::measureWrappedText(screen.target(), I18N.get(rules[i]), text, screen.contentRect().width).height);
+  const int16_t height = std::max<int>(line, maxHeight + (baccaratRules ? theme.spaceLg * 2 : theme.spaceMd));
   rulesPerPage = std::max<int>(1, screen.contentRect().height / height);
   const int pages = (ruleCount + rulesPerPage - 1) / rulesPerPage;
   rulesPage = std::clamp(rulesPage, 0, pages - 1);
   for (int i = rulesPage * rulesPerPage; i < std::min(ruleCount, (rulesPage + 1) * rulesPerPage); ++i)
-    screen.target().text(screen.takeTop(height), I18N.get(RULE_TEXT[i]), text);
+    screen.target().text(screen.takeTop(height), I18N.get(rules[i]), text);
   const int16_t width = (footer.width - theme.spaceSm * 2) / 3;
   drawButton(screen, fui::Rect{footer.x, footer.y, width, footer.height}, tr(STR_TODO_PREVIOUS), PREVIOUS_RULE, false,
              rulesPage > 0);

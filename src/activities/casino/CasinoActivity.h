@@ -37,6 +37,13 @@ class CasinoActivity final : public Activity, private UiAppHost {
     ACCEPT_BET,
     PREVIOUS_RULE,
     NEXT_RULE,
+    BACCARAT,
+    RULES_BLACKJACK,
+    RULES_BACCARAT,
+    BET_PLAYER,
+    BET_BANKER,
+    BET_TIE,
+    REVEAL_CARD,
     PRESET_BASE = 40,
     HAND_BASE = 50,
     DIGIT_BASE = 60
@@ -61,6 +68,9 @@ class CasinoActivity final : public Activity, private UiAppHost {
   bool loadFailed = false;
   bool clockValid = false;
   bool buttonNavigation = false;
+  bool baccaratTable = false;
+  bool baccaratRules = false;
+  BaccaratGame::Bet baccaratBet = BaccaratGame::Bet::Banker;
 
   static void casinoScreen(UiScreen& screen, void* user);
   static void onControl(const freeink::ui::ActionEvent& event, void* user);
@@ -70,6 +80,11 @@ class CasinoActivity final : public Activity, private UiAppHost {
   void buildTable(UiScreen& screen);
   void buildBetting(UiScreen& screen);
   void buildRound(UiScreen& screen);
+  void buildBaccaratRound(UiScreen& screen);
+  void drawBaccaratHand(UiScreen& screen, freeink::ui::Rect area, const BaccaratGame::Hand& hand, bool banker);
+  void drawBaccaratBets(UiScreen& screen, freeink::ui::Rect area);
+  void activateBaccarat(int control);
+  bool canPlaceBet(int64_t cents) const;
   void buildBetEntry(UiScreen& screen);
   void buildRules(UiScreen& screen);
   void buildStorageError(UiScreen& screen);

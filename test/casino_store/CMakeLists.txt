@@ -2,6 +2,7 @@ add_executable(CasinoStoreTest
   CasinoStoreTest.cpp
   ${REPO_ROOT}/src/CasinoStore.cpp
   ${REPO_ROOT}/src/util/BlackjackGame.cpp
+  ${REPO_ROOT}/src/util/BaccaratGame.cpp
 )
 
 target_include_directories(CasinoStoreTest PRIVATE

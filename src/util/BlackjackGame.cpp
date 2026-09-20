@@ -66,6 +66,21 @@ bool BlackjackGame::applyDailyCredit(const int32_t day) {
   return true;
 }
 
+bool BlackjackGame::settleExternalWager(const int64_t wagerCents, const int64_t returnCents) {
+  if (wagerCents < MIN_BET_CENTS || wagerCents > MAX_BALANCE_CENTS || wagerCents % 100 != 0 ||
+      wagerCents > current.balanceCents || returnCents < 0 || returnCents > wagerCents * 9)
+    return false;
+  current.balanceCents -= wagerCents;
+  credit(returnCents);
+  return true;
+}
+
+bool BlackjackGame::creditExternalReturn(const int64_t returnCents) {
+  if (returnCents < 0 || returnCents > MAX_BALANCE_CENTS * 9) return false;
+  credit(returnCents);
+  return true;
+}
+
 bool BlackjackGame::canBet(const int64_t betCents) const {
   return current.phase == Phase::Betting && betCents >= MIN_BET_CENTS && betCents % 100 == 0 &&
          betCents <= current.balanceCents;

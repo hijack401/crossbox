@@ -1,5 +1,6 @@
 #pragma once
 
+#include "util/BaccaratGame.h"
 #include "util/BlackjackGame.h"
 
 class CasinoStore {
@@ -8,6 +9,10 @@ class CasinoStore {
 
   BlackjackGame& game() { return blackjack; }
   const BlackjackGame& game() const { return blackjack; }
+  BaccaratGame& baccarat() { return baccaratGame; }
+  const BaccaratGame& baccarat() const { return baccaratGame; }
+  bool dealBaccarat(BaccaratGame::Bet bet, int64_t wagerCents, BaccaratGame::Random random, void* context = nullptr);
+  bool revealBaccarat();
   bool load();
   bool save();
   bool isReadOnly() const { return status == LoadStatus::NotLoaded || status == LoadStatus::Error; }
@@ -15,6 +20,7 @@ class CasinoStore {
 
  private:
   BlackjackGame blackjack;
+  BaccaratGame baccaratGame;
   LoadStatus status = LoadStatus::NotLoaded;
   bool primaryValid = false;
   bool recoveredFromTemporary = false;
