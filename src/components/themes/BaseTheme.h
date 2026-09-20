@@ -137,7 +137,8 @@ enum UIIcon {
   Usb,
   Blocks,
   TodoList,
-  Timer
+  Timer,
+  Casino
 };
 
 // Default theme implementation (Classic Theme)

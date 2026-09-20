@@ -25,7 +25,8 @@ enum class HomeMenuItem {
   FILE_TRANSFER,
   SETTINGS_MENU,
   TODO_LIST,
-  POMODORO
+  POMODORO,
+  CASINO
 };
 
 /**
@@ -95,6 +96,7 @@ class ActivityManager {
   void goToSettings();
   void goToTodoList();
   void goToPomodoro();
+  void goToCasino();
   void goToFileBrowser(std::string path = {});
   void goToLibrary();
   void goToBrowser();

@@ -14,6 +14,7 @@
 #include "boot_sleep/BootActivity.h"
 #include "boot_sleep/SleepActivity.h"
 #include "browser/OpdsBookBrowserActivity.h"
+#include "casino/CasinoActivity.h"
 #include "home/CrashActivity.h"
 #include "home/FileBrowserActivity.h"
 #include "home/HomeActivity.h"
@@ -266,6 +267,15 @@ void ActivityManager::goToPomodoro() {
   replaceActivity(std::move(activity));
 }
 
+void ActivityManager::goToCasino() {
+  auto activity = makeUniqueNoThrow<CasinoActivity>(renderer, mappedInput);
+  if (!activity) {
+    LOG_ERR("ACT", "OOM: Casino activity");
+    return;
+  }
+  replaceActivity(std::move(activity));
+}
+
 void ActivityManager::goToFileBrowser(std::string path) {
   replaceActivity(std::make_unique<FileBrowserActivity>(renderer, mappedInput, std::move(path)));
 }
@@ -339,6 +349,8 @@ void ActivityManager::goHome(HomeMenuItem initialMenuItem, bool cleanInitialRefr
       initialMenuItem = HomeMenuItem::TODO_LIST;
     } else if (activityName == "Pomodoro") {
       initialMenuItem = HomeMenuItem::POMODORO;
+    } else if (activityName == "Casino") {
+      initialMenuItem = HomeMenuItem::CASINO;
     }
   }
   replaceActivity(std::make_unique<HomeActivity>(renderer, mappedInput, initialMenuItem, cleanInitialRefresh));
