@@ -3,8 +3,7 @@
 Casino is a local game using virtual dollars. It has no deposits, purchases,
 withdrawals, or network play. Find it after Pomodoro on Home. The lobby shows
 the wallet and Slots, Blackjack, Roulette, and Baccarat, in that order.
-Blackjack, Roulette, and Baccarat are playable. Slots is muted and has no
-hit target.
+All four games are playable.
 
 ## Wallet and daily credit
 
@@ -22,13 +21,46 @@ zone. The X4 Pro simulator uses the computer's date through its clock HAL.
 Dates from 2024 through 2099 are accepted. With no trusted server, deliberately
 moving the device clock forward can grant credits early.
 
-All three games use the same wallet and daily-credit date. All amounts use integer
+All four games use the same wallet and daily-credit date. All amounts use integer
 cents, including half-dollar blackjack and surrender payments and Baccarat's
 Banker commission. New bets are whole dollars, starting at $1, and cannot exceed the
 available wallet. Quick bets are $10, $20, $40, and $80; Custom bet opens a
 numeric keypad and Max uses the available whole-dollar balance. A balance below
 $1 disables betting until a daily credit arrives. The wallet saturates at
 $999,999,999 to keep all arithmetic bounded.
+
+## Slots rules
+
+Slots is a custom three-reel game with one payline across the three displayed
+symbols. Each reel independently selects one of 20 equally likely stops using
+rejection sampling. The stops have the following symbol weights and payouts:
+
+| Symbol | Stops per reel | Three matching symbols: total return |
+| --- | --- | --- |
+| Cherry | 6 of 20 | 5× stake |
+| Lemon | 5 of 20 | 8× stake |
+| Bell | 4 of 20 | 15× stake |
+| Bar | 3 of 20 | 30× stake |
+| Seven | 2 of 20 | 100× stake |
+
+Exactly two cherries, in any positions, return 2× the stake. Every other
+combination returns zero. These multipliers include the original stake:
+a $10 triple-seven spin returns $1,000, for a $990 net win. There are no wilds,
+holds, extra paylines, or changes to outcomes to create near misses.
+
+The exact theoretical return is 95.925%: the 8,000 equally likely combinations
+of three reel stops return 7,674 stake units in total. This is a mathematical
+average over many spins, not a guaranteed return for a session. Each new spin
+is independent of previous results.
+
+Choose a stake using the presets, Custom bet, or Max. Spin debits it from the
+shared wallet and fixes all three symbols and the payout before any reveal.
+Reveal reel turns over one reel at a time, from left to right. Only the final
+reveal credits the total return, once; the result also shows the net win or
+loss. Leaving, sleeping, or restarting preserves the same symbols and reveal
+position. A partially revealed spin must be finished before starting another.
+After settlement, another affordable Spin can start immediately. Manual
+reveals avoid a continuous animation loop on the e-ink display.
 
 ## Blackjack table rules
 
@@ -143,23 +175,26 @@ choices, and deliberate reveals match the other Casino tables.
 
 `/.crosspoint/casino.bin` stores the shared wallet and credited date plus each
 game's wagers, phase, and settlement, including Blackjack's shoe and active
-hand, Baccarat's shoe and reveal position, and Roulette's draft bets or locked
-spin. The explicit version-4 format is 1,236 bytes with a version and CRC32,
-adding 195 bytes to version 3 for Roulette. It
+hand, Baccarat's shoe and reveal position, Roulette's draft bets or locked
+spin, and Slots' symbols and reveal position. The explicit version-5 format
+is 1,257 bytes with a version and CRC32, adding 21 bytes to version 4 for
+Slots. It
 never serializes native struct padding or pointers. Legacy 594-byte version-1
 files load with their exact wallet, date, Blackjack shoe, and current hand;
 Baccarat starts with an unused shoe. Version-2 files preserve both games and
 the wallet; their completed Baccarat rounds load fully revealed without paying
 again. Version-3 files also preserve partially revealed Baccarat rounds.
-Versions 1–3 start Roulette with an empty draft. The next successful save upgrades the
+Versions 1–3 start Roulette with an empty draft. Version-4 files preserve all
+three existing games, including pending Roulette spins. Versions 1–4 start
+Slots with an empty betting state. The next successful save upgrades the
 file while preserving the legacy snapshot as the backup. The store
 writes and verifies `casino.tmp`, preserves `casino.bak`, then installs the
 new primary. Reads recover from a valid backup or temporary file if needed;
 unrecoverable files produce an error instead of resetting the wallet.
 
 Every successful gameplay action and daily credit saves the complete state.
-Baccarat saves each individual reveal. Roulette saves draft changes, Spin,
-Reveal result, and the next-round choice. Cards or a locked pocket, reveal
+Baccarat and Slots save each individual reveal. Roulette saves draft changes,
+Spin, Reveal result, and the next-round choice. Cards, reel symbols, or a locked pocket, reveal
 progress, wagers, and wallet share one snapshot, so recovery cannot combine
 a pending reveal with an already-paid wallet or pay a completed round twice.
 Leaving, sleeping, or restarting resumes the same round and never settles an
@@ -169,10 +204,11 @@ entry. Forced power-off before a successful retry can still lose that last
 change; the previous valid snapshot remains the recovery point. Filesystem
 failure or manual SD-file edits are not a secure multiplayer economy.
 
-All three games use fixed arrays: Blackjack has four player hands, one dealer
+All four games use fixed arrays: Blackjack has four player hands, one dealer
 hand, and 312 shoe cards; Baccarat has two three-card hands and 416 shoe cards;
-Roulette has 16 bet entries. Their states are 608, 448, and 280 bytes on the
-host. Persistence uses one checked 1,336-byte scratch allocation during load
+Roulette has 16 bet entries; Slots has three symbols. Their states are 608,
+448, 280, and 24 bytes on the host. Persistence uses one checked 1,360-byte
+scratch allocation during load
 or verification, released on return,
 and 128-byte stream buffers. Keeping the scratch snapshot off the task stack
 preserves live state when a read or verification fails without adding a
@@ -188,8 +224,8 @@ allocated once on entry with checked allocation and released on exit.
 
 ```sh
 cmake -S test -B build/host-tests
-cmake --build build/host-tests --target BlackjackGameTest BaccaratGameTest RouletteGameTest CasinoStoreTest CasinoDateTest
-ctest --test-dir build/host-tests -R '^(BlackjackGame|BaccaratGame|RouletteGame|CasinoPersistence|CasinoDate)\.' --output-on-failure
+cmake --build build/host-tests --target BlackjackGameTest BaccaratGameTest RouletteGameTest SlotsGameTest CasinoStoreTest CasinoDateTest
+ctest --test-dir build/host-tests -R '^(BlackjackGame|BaccaratGame|RouletteGame|SlotsGame|CasinoPersistence|CasinoDate)\.' --output-on-failure
 pio run -e simulator_x4_pro
 pio run -e x4pro
 ```
@@ -208,10 +244,16 @@ merged bets, the 16-position limit, affordability, locked results, rebet drafts,
 restart/reveal guards, rejection sampling, and malformed snapshots. Persistence
 tests include legacy upgrades, pending spins, shared-wallet returns, and save
 failures around both Spin and Reveal result.
+Slots tests exhaust all 8,000 stop combinations and 125 symbol lines, verifying
+the weights, total-return paytable, and exact theoretical return. They also
+cover maximum jackpots, insufficient funds, every reveal/resume position,
+rejection sampling, direct repeat spins, and malformed snapshots. Persistence
+tests check reserved stakes, withheld returns, final-reveal retries, and
+version-4 migration with an existing pending game.
 
 On the X4 Pro, check card readability, touch targets, all four orientations,
-sleep/reopen during a hand, between Baccarat reveals, or before a Roulette
-reveal, persistence after restart, and daily rollover with a correct clock.
+sleep/reopen during a hand, between Baccarat or Slots reveals, or before a
+Roulette reveal, persistence after restart, and daily rollover with a correct clock.
 For Roulette, also check all bet categories, paging, removing bets, combined
 stakes, and Same bets after changing the wallet in another game.
 Monitor serial heap before entering and after leaving Casino;

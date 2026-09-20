@@ -26,7 +26,7 @@ class CasinoActivity final : public Activity, private UiAppHost {
     RouletteOptions,
     RouletteStake
   };
-  enum class Game : uint8_t { Blackjack, Baccarat, Roulette };
+  enum class Game : uint8_t { Blackjack, Baccarat, Roulette, Slots };
   enum Control : int16_t {
     BLACKJACK,
     RULES,
@@ -71,7 +71,13 @@ class CasinoActivity final : public Activity, private UiAppHost {
     R_CATEGORY_BASE = 120,
     R_TYPE_BASE = 130,
     R_CHOICE_BASE = 150,
-    R_REMOVE_BASE = 180
+    R_REMOVE_BASE = 180,
+    SLOTS = 200,
+    RULES_SLOTS,
+    S_SPIN,
+    S_REVEAL,
+    S_AGAIN,
+    S_CHANGE_BET
   };
   static constexpr freeink::ui::ActionId ACTION_CONTROL = 1;
   static constexpr int64_t PRESETS[] = {1000, 2000, 4000, 8000};
@@ -79,7 +85,7 @@ class CasinoActivity final : public Activity, private UiAppHost {
   freeink::ui::ButtonProps buttonProps;
   int16_t focusTargets[24]{};
   int focusCount = 0;
-  int selectedControl = BLACKJACK;
+  int selectedControl = SLOTS;
   int displayedHand = 0;
   int rulesPage = 0;
   int rulesPerPage = 1;
@@ -116,6 +122,10 @@ class CasinoActivity final : public Activity, private UiAppHost {
   void drawBaccaratHand(UiScreen& screen, freeink::ui::Rect area, const BaccaratGame::Hand& hand, bool banker);
   void drawBaccaratBets(UiScreen& screen, freeink::ui::Rect area);
   void activateBaccarat(int control);
+  void activateSlots(int control);
+  void buildSlotsBetting(UiScreen& screen);
+  void buildSlotsRound(UiScreen& screen);
+  void buildSlotsPaytable(UiScreen& screen);
   void activateRoulette(int control);
   void buildRouletteBetting(UiScreen& screen);
   void buildRouletteRound(UiScreen& screen);

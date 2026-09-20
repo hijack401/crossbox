@@ -12,9 +12,10 @@ namespace {
 constexpr char MAIN[] = "/.crosspoint/casino.bin";
 constexpr char TEMP[] = "/.crosspoint/casino.tmp";
 constexpr char BACKUP[] = "/.crosspoint/casino.bak";
-constexpr size_t CURRENT_FILE_BYTES = 1236;
+constexpr size_t CURRENT_FILE_BYTES = 1257;
 constexpr size_t ROULETTE_OFFSET = 1037;
 constexpr size_t ROULETTE_TOTAL_OFFSET = ROULETTE_OFFSET + RouletteGame::MAX_BETS * 11;
+constexpr size_t SLOTS_OFFSET = 1232;
 
 struct SpinSample {
   uint32_t value;
@@ -96,6 +97,14 @@ void expectState(const RouletteGame::State& actual, const RouletteGame::State& e
   }
 }
 
+void expectState(const SlotsGame::State& actual, const SlotsGame::State& expected) {
+  EXPECT_EQ(actual.wagerCents, expected.wagerCents);
+  EXPECT_EQ(actual.returnCents, expected.returnCents);
+  EXPECT_EQ(actual.revealedReels, expected.revealedReels);
+  EXPECT_EQ(actual.phase, expected.phase);
+  EXPECT_TRUE(std::equal(std::begin(actual.reels), std::end(actual.reels), std::begin(expected.reels)));
+}
+
 void prepareShoe(BlackjackGame& game, std::initializer_list<uint8_t> prefix) {
   auto state = game.state();
   for (size_t i = 0; i < BlackjackGame::SHOE_CARDS; ++i) state.shoe[i] = static_cast<uint8_t>(i % 52);
@@ -134,6 +143,7 @@ void checkpoint(CasinoStore& store) {
   expectState(reloaded.game().state(), store.game().state());
   expectState(reloaded.baccarat().state(), store.baccarat().state());
   expectState(reloaded.roulette().state(), store.roulette().state());
+  expectState(reloaded.slots().state(), store.slots().state());
   ASSERT_TRUE(reloaded.save());
   EXPECT_EQ(casinoFake::files.at(MAIN), original);
 }
@@ -141,6 +151,11 @@ void checkpoint(CasinoStore& store) {
 void finishBaccarat(CasinoStore& store) {
   while (store.baccarat().state().phase == BaccaratGame::Phase::Revealing) ASSERT_TRUE(store.revealBaccarat());
   ASSERT_EQ(store.baccarat().state().phase, BaccaratGame::Phase::Settled);
+}
+
+void finishSlots(CasinoStore& store) {
+  while (store.slots().state().phase == SlotsGame::Phase::Revealing) ASSERT_TRUE(store.revealSlots());
+  ASSERT_EQ(store.slots().state().phase, SlotsGame::Phase::Settled);
 }
 
 void repairChecksum(std::string& bytes) {
@@ -235,6 +250,36 @@ std::string versionThreeSnapshot(const BlackjackGame::State& blackjack, const Ba
   bytes.resize(bytes.size() - 4);
   bytes += static_cast<char>(baccarat.revealedCards);
   bytes.resize(bytes.size() + 4);
+  repairChecksum(bytes);
+  return bytes;
+}
+
+std::string versionFourSnapshot(const BlackjackGame::State& blackjack, const BaccaratGame::State& baccarat,
+                                const RouletteGame::State& roulette) {
+  std::string bytes = versionThreeSnapshot(blackjack, baccarat);
+  bytes.resize(bytes.size() - 4);
+  bytes.reserve(1236);
+  bytes[4] = 4;
+  bytes[6] = static_cast<char>(1224 & 0xff);
+  bytes[7] = static_cast<char>(1224 >> 8);
+  const auto number = [&bytes](uint64_t value, unsigned size) {
+    for (unsigned i = 0; i < size; ++i) {
+      bytes += static_cast<char>(value);
+      value >>= 8;
+    }
+  };
+  for (const auto& entry : roulette.bets) {
+    number(entry.amountCents, 8);
+    number(static_cast<uint8_t>(entry.bet.type), 1);
+    number(entry.bet.first, 1);
+    number(entry.bet.second, 1);
+  }
+  number(roulette.wagerCents, 8);
+  number(roulette.returnCents, 8);
+  number(roulette.betCount, 1);
+  number(roulette.result, 1);
+  number(static_cast<uint8_t>(roulette.phase), 1);
+  number(0, 4);
   repairChecksum(bytes);
   return bytes;
 }
@@ -526,7 +571,7 @@ TEST_F(CasinoPersistence, MigratesLegacyBlackjackHandWithoutChangingWalletDayOrS
   EXPECT_EQ(casinoFake::files.at(MAIN), bytes);
   ASSERT_TRUE(migrated.save());
   EXPECT_EQ(casinoFake::files.at(MAIN).size(), CURRENT_FILE_BYTES);
-  EXPECT_EQ(static_cast<uint8_t>(casinoFake::files.at(MAIN)[4]), 4);
+  EXPECT_EQ(static_cast<uint8_t>(casinoFake::files.at(MAIN)[4]), 5);
   EXPECT_EQ(casinoFake::files.at(BACKUP), bytes);
   checkpoint(migrated);
   ASSERT_TRUE(migrated.game().stand());
@@ -617,7 +662,7 @@ TEST_F(CasinoPersistence, ExternalSettlementChecksInputsAndClampsWalletWithoutCh
   EXPECT_FALSE(store.game().settleExternalWager(100, 901));
   EXPECT_FALSE(store.game().settleExternalWager(BlackjackGame::MAX_BALANCE_CENTS + 100, 0));
   EXPECT_FALSE(store.game().creditExternalReturn(-1));
-  EXPECT_FALSE(store.game().creditExternalReturn(BlackjackGame::MAX_BALANCE_CENTS * 36 + 1));
+  EXPECT_FALSE(store.game().creditExternalReturn(BlackjackGame::MAX_BALANCE_CENTS * 100 + 1));
   EXPECT_TRUE(store.game().creditExternalReturn(0));
   expectState(store.game().state(), original);
   auto nearCap = original;
@@ -796,7 +841,7 @@ TEST_F(CasinoPersistence, MigratesVersionTwoSettledAndBettingWithoutPayingAgain)
     EXPECT_EQ(casinoFake::files.at(MAIN), bytes);
     ASSERT_TRUE(migrated.save());
     EXPECT_EQ(casinoFake::files.at(MAIN).size(), CURRENT_FILE_BYTES);
-    EXPECT_EQ(static_cast<uint8_t>(casinoFake::files.at(MAIN)[4]), 4);
+    EXPECT_EQ(static_cast<uint8_t>(casinoFake::files.at(MAIN)[4]), 5);
     EXPECT_EQ(casinoFake::files.at(BACKUP), bytes);
     checkpoint(migrated);
   }
@@ -887,7 +932,7 @@ TEST_F(CasinoPersistence, MigratesVersionThreeWithBlackjackAndEveryBaccaratRevea
     EXPECT_EQ(casinoFake::files.at(MAIN), bytes);
     ASSERT_TRUE(migrated.save());
     EXPECT_EQ(casinoFake::files.at(MAIN).size(), CURRENT_FILE_BYTES);
-    EXPECT_EQ(static_cast<uint8_t>(casinoFake::files.at(MAIN)[4]), 4);
+    EXPECT_EQ(static_cast<uint8_t>(casinoFake::files.at(MAIN)[4]), 5);
     EXPECT_EQ(casinoFake::files.at(BACKUP), bytes);
     checkpoint(migrated);
     finishBaccarat(migrated);
@@ -1113,6 +1158,275 @@ TEST_F(CasinoPersistence, RejectsMalformedRouletteEvenWithCorrectChecksumWithout
     EXPECT_FALSE(store.revealRoulette());
     expectState(store.game().state(), blackjack);
     expectState(store.roulette().state(), roulette);
+  }
+}
+
+TEST_F(CasinoPersistence, MigratesVersionFourPreservingRouletteAndUnrevealedBaccarat) {
+  for (unsigned phase = 0; phase < 3; ++phase) {
+    SCOPED_TRACE(phase);
+    casinoFake::reset();
+    CasinoStore original;
+    ASSERT_TRUE(original.load());
+    ASSERT_TRUE(original.game().applyDailyCredit(20000));
+    ASSERT_TRUE(original.game().applyDailyCredit(20001));
+    prepareShoe(original.game(), {9, 6, 7, 8, 1});
+    ASSERT_TRUE(original.game().startRound(2500, nullptr));
+    prepareShoe(original.baccarat(), {3, 4, 3, 3});
+    ASSERT_TRUE(original.dealBaccarat(BaccaratGame::Bet::Banker, 1000, nullptr));
+    ASSERT_TRUE(original.revealBaccarat());
+    ASSERT_TRUE(original.revealBaccarat());
+    ASSERT_TRUE(
+        original.roulette().addBet({RouletteGame::Type::Straight, 17}, 1000, original.game().state().balanceCents));
+    SpinSample random{37 + 17};
+    if (phase >= 1) ASSERT_TRUE(original.spinRoulette(fixedSpin, &random));
+    if (phase == 2) ASSERT_TRUE(original.revealRoulette());
+    const auto bytes =
+        versionFourSnapshot(original.game().state(), original.baccarat().state(), original.roulette().state());
+    ASSERT_EQ(bytes.size(), 1236u);
+    casinoFake::files[MAIN] = bytes;
+
+    CasinoStore migrated;
+    ASSERT_TRUE(migrated.load());
+    expectState(migrated.game().state(), original.game().state());
+    expectState(migrated.baccarat().state(), original.baccarat().state());
+    expectState(migrated.roulette().state(), original.roulette().state());
+    EXPECT_EQ(migrated.slots().state().phase, SlotsGame::Phase::Betting);
+    EXPECT_EQ(migrated.slots().state().wagerCents, 0);
+    EXPECT_EQ(migrated.slots().state().revealedReels, 0);
+    EXPECT_FALSE(migrated.game().applyDailyCredit(20001));
+    EXPECT_EQ(casinoFake::files.at(MAIN), bytes);
+    ASSERT_TRUE(migrated.save());
+    EXPECT_EQ(casinoFake::files.at(MAIN).size(), CURRENT_FILE_BYTES);
+    EXPECT_EQ(static_cast<uint8_t>(casinoFake::files.at(MAIN)[4]), 5);
+    EXPECT_EQ(casinoFake::files.at(BACKUP), bytes);
+    checkpoint(migrated);
+
+    const auto beforeSlots = migrated.game().state().balanceCents;
+    SpinSample jackpot{38};
+    ASSERT_TRUE(migrated.spinSlots(1000, fixedSpin, &jackpot));
+    finishSlots(migrated);
+    EXPECT_EQ(migrated.game().state().balanceCents, beforeSlots + 99000);
+    expectState(migrated.baccarat().state(), original.baccarat().state());
+    expectState(migrated.roulette().state(), original.roulette().state());
+    finishBaccarat(migrated);
+    if (phase == 1) ASSERT_TRUE(migrated.revealRoulette());
+    ASSERT_TRUE(migrated.game().stand());
+    EXPECT_EQ(migrated.game().state().balanceCents, phase == 0 ? 209950 : 244950);
+    checkpoint(migrated);
+  }
+}
+
+TEST_F(CasinoPersistence, ResumesSlotsAtEveryReelWithoutResamplingAndPaysOnlyOnTheThird) {
+  for (uint8_t revealed = 0; revealed < 3; ++revealed) {
+    SCOPED_TRACE(revealed);
+    casinoFake::reset();
+    CasinoStore store;
+    ASSERT_TRUE(store.load());
+    SpinSample jackpot{38};
+    ASSERT_TRUE(store.spinSlots(1000, fixedSpin, &jackpot));
+    EXPECT_EQ(jackpot.calls, 3);
+    EXPECT_EQ(store.game().state().balanceCents, 99000);
+    EXPECT_EQ(store.slots().state().returnCents, 100000);
+    for (uint8_t reel = 0; reel < revealed; ++reel) ASSERT_TRUE(store.revealSlots());
+    checkpoint(store);
+    CasinoStore resumed;
+    ASSERT_TRUE(resumed.load());
+    expectState(resumed.slots().state(), store.slots().state());
+    EXPECT_EQ(resumed.slots().state().revealedReels, revealed);
+    EXPECT_FALSE(resumed.spinSlots(1000, fixedSpin, &jackpot));
+    EXPECT_EQ(jackpot.calls, 3);
+    for (uint8_t reel = revealed; reel < 3; ++reel) {
+      ASSERT_TRUE(resumed.revealSlots());
+      EXPECT_EQ(resumed.slots().state().revealedReels, reel + 1);
+      EXPECT_EQ(resumed.game().state().balanceCents, reel == 2 ? 199000 : 99000);
+      checkpoint(resumed);
+    }
+    EXPECT_EQ(resumed.slots().state().phase, SlotsGame::Phase::Settled);
+    EXPECT_FALSE(resumed.revealSlots());
+    ASSERT_TRUE(store.load());
+    EXPECT_FALSE(store.revealSlots());
+    EXPECT_EQ(store.game().state().balanceCents, 199000);
+    EXPECT_EQ(jackpot.calls, 3);
+  }
+}
+
+TEST_F(CasinoPersistence, StartsTheNextSlotsSpinDirectlyFromSettledAndDebitsOnlyOnce) {
+  CasinoStore store;
+  ASSERT_TRUE(store.load());
+  SpinSample jackpot{38};
+  ASSERT_TRUE(store.spinSlots(1000, fixedSpin, &jackpot));
+  finishSlots(store);
+  EXPECT_EQ(store.game().state().balanceCents, 199000);
+  checkpoint(store);
+  SpinSample cherries{20};
+  ASSERT_TRUE(store.spinSlots(2000, fixedSpin, &cherries));
+  EXPECT_EQ(store.game().state().balanceCents, 197000);
+  EXPECT_EQ(store.slots().state().wagerCents, 2000);
+  EXPECT_EQ(store.slots().state().returnCents, 10000);
+  EXPECT_EQ(store.slots().state().revealedReels, 0);
+  EXPECT_EQ(cherries.calls, 3);
+  EXPECT_FALSE(store.spinSlots(2000, fixedSpin, &cherries));
+  EXPECT_EQ(cherries.calls, 3);
+  checkpoint(store);
+  finishSlots(store);
+  EXPECT_EQ(store.game().state().balanceCents, 207000);
+  EXPECT_FALSE(store.revealSlots());
+  checkpoint(store);
+}
+
+TEST_F(CasinoPersistence, AcceptsMaximumSlotsPayoutAndClampsOnlyTheSharedWallet) {
+  CasinoStore store;
+  ASSERT_TRUE(store.load());
+  auto maximum = store.game().state();
+  maximum.balanceCents = BlackjackGame::MAX_BALANCE_CENTS;
+  ASSERT_TRUE(store.game().restore(maximum));
+  SpinSample jackpot{38};
+  ASSERT_TRUE(store.spinSlots(maximum.balanceCents, fixedSpin, &jackpot));
+  EXPECT_EQ(store.game().state().balanceCents, 0);
+  EXPECT_EQ(store.slots().state().returnCents, BlackjackGame::MAX_BALANCE_CENTS * 100);
+  checkpoint(store);
+  ASSERT_TRUE(store.revealSlots());
+  ASSERT_TRUE(store.revealSlots());
+  EXPECT_EQ(store.game().state().balanceCents, 0);
+  ASSERT_TRUE(store.revealSlots());
+  EXPECT_EQ(store.game().state().balanceCents, BlackjackGame::MAX_BALANCE_CENTS);
+  EXPECT_EQ(store.slots().state().returnCents, BlackjackGame::MAX_BALANCE_CENTS * 100);
+  EXPECT_FALSE(store.revealSlots());
+  checkpoint(store);
+}
+
+TEST_F(CasinoPersistence, RejectsSlotsWithoutStorageFundsOrValidWagerAndKeepsPriorResult) {
+  CasinoStore store;
+  SpinSample jackpot{38};
+  EXPECT_FALSE(store.spinSlots(1000, fixedSpin, &jackpot));
+  EXPECT_FALSE(store.revealSlots());
+  ASSERT_TRUE(store.load());
+  EXPECT_FALSE(store.revealSlots());
+  for (const int64_t wager : {-100LL, 0LL, 99LL, 150LL, 100100LL}) {
+    EXPECT_FALSE(store.spinSlots(wager, fixedSpin, &jackpot));
+  }
+  EXPECT_FALSE(store.spinSlots(1000, nullptr));
+  EXPECT_EQ(jackpot.calls, 0);
+  EXPECT_EQ(store.game().state().balanceCents, 100000);
+  ASSERT_TRUE(store.spinSlots(1000, fixedSpin, &jackpot));
+  finishSlots(store);
+  const auto result = store.slots().state();
+  ASSERT_TRUE(store.game().settleExternalWager(199000, 0));
+  EXPECT_EQ(store.game().state().balanceCents, 0);
+  EXPECT_FALSE(store.spinSlots(100, fixedSpin, &jackpot));
+  EXPECT_FALSE(store.revealSlots());
+  EXPECT_EQ(jackpot.calls, 3);
+  expectState(store.slots().state(), result);
+  checkpoint(store);
+}
+
+TEST_F(CasinoPersistence, FailedSlotsSpinAndFinalRevealSavesRetryWithoutReplayingDebitOrPayout) {
+  for (const bool revealing : {false, true}) {
+    for (unsigned failure = 0; failure < 4; ++failure) {
+      SCOPED_TRACE(revealing);
+      SCOPED_TRACE(failure);
+      casinoFake::reset();
+      CasinoStore store;
+      ASSERT_TRUE(store.load());
+      SpinSample jackpot{38};
+      if (revealing) {
+        ASSERT_TRUE(store.spinSlots(1000, fixedSpin, &jackpot));
+        ASSERT_TRUE(store.revealSlots());
+        ASSERT_TRUE(store.revealSlots());
+      }
+      ASSERT_TRUE(store.save());
+      const auto priorState = store.slots().state();
+      const auto priorBalance = store.game().state().balanceCents;
+      const auto previous = casinoFake::files.at(MAIN);
+      ASSERT_TRUE(revealing ? store.revealSlots() : store.spinSlots(1000, fixedSpin, &jackpot));
+      const auto pendingState = store.slots().state();
+      const auto pendingBalance = store.game().state().balanceCents;
+      switch (failure) {
+        case 0:
+          casinoFake::writeRemaining = SLOTS_OFFSET + 17;
+          break;
+        case 1:
+          casinoFake::failRenameAt = 1;
+          break;
+        case 2:
+          casinoFake::corruptOnClose = true;
+          break;
+        case 3:
+          casinoFake::readRemaining = SLOTS_OFFSET + 17;
+          break;
+      }
+      EXPECT_FALSE(store.save());
+      EXPECT_EQ(casinoFake::files.at(MAIN), previous);
+      expectState(store.slots().state(), pendingState);
+      EXPECT_EQ(store.game().state().balanceCents, pendingBalance);
+      if (revealing)
+        EXPECT_FALSE(store.revealSlots());
+      else
+        EXPECT_FALSE(store.spinSlots(1000, fixedSpin, &jackpot));
+      EXPECT_EQ(jackpot.calls, 3);
+      casinoFake::writeRemaining = casinoFake::readRemaining = casinoFake::failRenameAt = -1;
+      casinoFake::corruptOnClose = false;
+      CasinoStore restarted;
+      ASSERT_TRUE(restarted.load());
+      expectState(restarted.slots().state(), priorState);
+      EXPECT_EQ(restarted.game().state().balanceCents, priorBalance);
+      ASSERT_TRUE(store.save());
+      ASSERT_TRUE(restarted.load());
+      expectState(restarted.slots().state(), pendingState);
+      EXPECT_EQ(restarted.game().state().balanceCents, pendingBalance);
+      finishSlots(restarted);
+      EXPECT_FALSE(restarted.revealSlots());
+      EXPECT_EQ(restarted.game().state().balanceCents, 199000);
+    }
+  }
+}
+
+TEST_F(CasinoPersistence, RecoversUnrevealedSlotsAndMatchingWalletFromBackupOrTemporary) {
+  for (const bool backup : {false, true}) {
+    casinoFake::reset();
+    CasinoStore store;
+    ASSERT_TRUE(store.load());
+    SpinSample jackpot{38};
+    ASSERT_TRUE(store.spinSlots(1000, fixedSpin, &jackpot));
+    ASSERT_TRUE(store.revealSlots());
+    ASSERT_TRUE(store.save());
+    const auto pending = casinoFake::files.at(MAIN);
+    casinoFake::files[MAIN] = "corrupt";
+    casinoFake::files[backup ? BACKUP : TEMP] = pending;
+    CasinoStore recovered;
+    ASSERT_TRUE(recovered.load());
+    EXPECT_EQ(recovered.loadStatus(), CasinoStore::LoadStatus::Recovered);
+    expectState(recovered.slots().state(), store.slots().state());
+    EXPECT_EQ(recovered.game().state().balanceCents, 99000);
+    EXPECT_FALSE(recovered.spinSlots(1000, fixedSpin, &jackpot));
+    EXPECT_EQ(jackpot.calls, 3);
+    finishSlots(recovered);
+    EXPECT_EQ(recovered.game().state().balanceCents, 199000);
+    checkpoint(recovered);
+    EXPECT_FALSE(recovered.revealSlots());
+  }
+}
+
+TEST_F(CasinoPersistence, RejectsMalformedSlotsWithValidChecksumWithoutReplacingLiveState) {
+  CasinoStore store;
+  ASSERT_TRUE(store.load());
+  SpinSample jackpot{38};
+  ASSERT_TRUE(store.spinSlots(1000, fixedSpin, &jackpot));
+  ASSERT_TRUE(store.save());
+  const auto valid = casinoFake::files.at(MAIN);
+  const auto blackjack = store.game().state();
+  const auto slots = store.slots().state();
+  for (const size_t offset : {SLOTS_OFFSET, SLOTS_OFFSET + 7, SLOTS_OFFSET + 8, SLOTS_OFFSET + 15, SLOTS_OFFSET + 16,
+                              SLOTS_OFFSET + 17, SLOTS_OFFSET + 18, SLOTS_OFFSET + 19, SLOTS_OFFSET + 20}) {
+    SCOPED_TRACE(offset);
+    casinoFake::files[MAIN] = valid;
+    casinoFake::files[MAIN][offset] = static_cast<char>(0xff);
+    repairChecksum(casinoFake::files[MAIN]);
+    EXPECT_FALSE(store.load());
+    EXPECT_TRUE(store.isReadOnly());
+    EXPECT_FALSE(store.revealSlots());
+    expectState(store.game().state(), blackjack);
+    expectState(store.slots().state(), slots);
   }
 }
 

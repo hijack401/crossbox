@@ -1,8 +1,9 @@
 # File Formats
 
-These formats describe the SD-card cache files under `/.crosspoint/epub_<hash>/`.
-All POD fields are written in the ESP32 little-endian representation used by
-`Serialization.h`; strings are length-prefixed UTF-8.
+The EPUB formats describe SD-card cache files under `/.crosspoint/epub_<hash>/`.
+Their POD fields use the ESP32 little-endian representation written by
+`Serialization.h`; strings are length-prefixed UTF-8. Other persisted formats
+specify their paths and encodings below.
 
 ## `book.bin`
 
@@ -486,3 +487,36 @@ make a real book disappear.
 
 `selfSize` is the expected file size. Comparing it against the real one is a free
 truncation guard: a build cut short by a power failure cannot pass.
+
+## `casino.bin`
+
+### Version 5
+
+`/.crosspoint/casino.bin` stores the shared wallet, daily-credit date, and game
+states for Slots, Blackjack, Roulette, and Baccarat. Version 5 is exactly 1,257
+bytes. Fields are explicitly encoded little-endian without native struct
+padding. It appends a 21-byte Slots record to the version-4 payload:
+
+| Byte offset | Size | Field |
+| --- | --- | --- |
+| 0 | 4 | Magic `CPCA` (`uint32_t` value `0x41435043`) |
+| 4 | 2 | Format version: `uint16_t` value 5 |
+| 6 | 2 | Payload size: `uint16_t` value 1,245 |
+| 8 | 1,224 | Shared wallet/date and Blackjack, Baccarat, Roulette state |
+| 1,232 | 8 | Slots `int64_t wagerCents` |
+| 1,240 | 8 | Slots `int64_t returnCents`, including the stake |
+| 1,248 | 3 | Slots symbols, one byte per reel: Cherry 0, Lemon 1, Bell 2, Bar 3, Seven 4 |
+| 1,251 | 1 | Slots revealed-reel count: 0–3 |
+| 1,252 | 1 | Slots phase: Betting 0, Revealing 1, Settled 2 |
+| 1,253 | 4 | CRC32 of all preceding bytes, including the header |
+
+CRC32 uses reflected polynomial `0xedb88320`, initial value `0xffffffff`, and
+final XOR `0xffffffff`. Readers also validate game-state invariants and payouts.
+
+Versions 1–4 migrate without resetting the wallet, credited date, or game
+states present in that version; Slots starts empty. The next successful save
+writes version 5. Saves write and verify `/.crosspoint/casino.tmp`, preserve the
+previous primary as `/.crosspoint/casino.bak`, then rename the verified temporary
+file into place. Loading can recover a valid backup or temporary file without
+settling an already-paid round again. See [Casino](casino.md) for migration,
+reveal, recovery, and game-state details.

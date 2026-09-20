@@ -13,7 +13,7 @@ constexpr char FILE_PATH[] = "/.crosspoint/casino.bin";
 constexpr char TEMP_PATH[] = "/.crosspoint/casino.tmp";
 constexpr char BACKUP_PATH[] = "/.crosspoint/casino.bak";
 constexpr uint32_t MAGIC = 0x41435043;  // CPCA, little endian.
-constexpr uint16_t VERSION = 4;
+constexpr uint16_t VERSION = 5;
 constexpr size_t HAND_BYTES = 16 + BlackjackGame::MAX_CARDS + 6;
 constexpr uint16_t LEGACY_PAYLOAD_BYTES =
     40 + 4 + BlackjackGame::SHOE_CARDS + 3 + (BlackjackGame::MAX_HANDS + 1) * HAND_BYTES + 3;
@@ -21,16 +21,20 @@ constexpr uint16_t LEGACY_BACCARAT_BYTES = 16 + BaccaratGame::SHOE_CARDS + 3 + 8
 constexpr uint16_t VERSION_2_PAYLOAD_BYTES = LEGACY_PAYLOAD_BYTES + LEGACY_BACCARAT_BYTES;
 constexpr uint16_t VERSION_3_PAYLOAD_BYTES = VERSION_2_PAYLOAD_BYTES + 1;
 constexpr uint16_t ROULETTE_BYTES = RouletteGame::MAX_BETS * 11 + 16 + 3;
-constexpr uint16_t PAYLOAD_BYTES = VERSION_3_PAYLOAD_BYTES + ROULETTE_BYTES;
+constexpr uint16_t VERSION_4_PAYLOAD_BYTES = VERSION_3_PAYLOAD_BYTES + ROULETTE_BYTES;
+constexpr uint16_t SLOTS_BYTES = 16 + 3 + 2;
+constexpr uint16_t PAYLOAD_BYTES = VERSION_4_PAYLOAD_BYTES + SLOTS_BYTES;
 constexpr size_t LEGACY_FILE_BYTES = 8 + LEGACY_PAYLOAD_BYTES + 4;
 constexpr size_t VERSION_2_FILE_BYTES = 8 + VERSION_2_PAYLOAD_BYTES + 4;
 constexpr size_t VERSION_3_FILE_BYTES = 8 + VERSION_3_PAYLOAD_BYTES + 4;
+constexpr size_t VERSION_4_FILE_BYTES = 8 + VERSION_4_PAYLOAD_BYTES + 4;
 constexpr size_t FILE_BYTES = 8 + PAYLOAD_BYTES + 4;
 
 struct StoredState {
   BlackjackGame::State blackjack;
   BaccaratGame::State baccarat;
   RouletteGame::State roulette;
+  SlotsGame::State slots;
 };
 
 uint32_t updateCrc(uint32_t crc, uint8_t byte) {
@@ -71,7 +75,7 @@ class BinaryWriter {
   }
 
   bool write(const BlackjackGame::State& state, const BaccaratGame::State& baccarat,
-             const RouletteGame::State& roulette) {
+             const RouletteGame::State& roulette, const SlotsGame::State& slots) {
     number(MAGIC, 4);
     number(VERSION, 2);
     number(PAYLOAD_BYTES, 2);
@@ -111,6 +115,11 @@ class BinaryWriter {
     number(roulette.betCount, 1);
     number(roulette.result, 1);
     number(static_cast<uint8_t>(roulette.phase), 1);
+    number(slots.wagerCents, 8);
+    number(slots.returnCents, 8);
+    for (const auto symbol : slots.reels) number(static_cast<uint8_t>(symbol), 1);
+    number(slots.revealedReels, 1);
+    number(static_cast<uint8_t>(slots.phase), 1);
     number(crc ^ 0xffffffffU, 4, false);
     flush();
     return !failed;
@@ -186,6 +195,7 @@ class BinaryReader {
     const uint16_t expectedPayload = version == 1   ? LEGACY_PAYLOAD_BYTES
                                      : version == 2 ? VERSION_2_PAYLOAD_BYTES
                                      : version == 3 ? VERSION_3_PAYLOAD_BYTES
+                                     : version == 4 ? VERSION_4_PAYLOAD_BYTES
                                                     : PAYLOAD_BYTES;
     if (version < 1 || version > VERSION || payloadBytes != expectedPayload) return false;
     auto& state = snapshot.blackjack;
@@ -254,10 +264,20 @@ class BinaryReader {
       roulette.betCount = roulette.result = 0;
       roulette.phase = RouletteGame::Phase::Betting;
     }
+    auto& slots = snapshot.slots;
+    if (version >= 5) {
+      slots.wagerCents = money();
+      slots.returnCents = money();
+      for (auto& symbol : slots.reels) symbol = static_cast<SlotsGame::Symbol>(number(1));
+      slots.revealedReels = number(1);
+      slots.phase = static_cast<SlotsGame::Phase>(number(1));
+    } else {
+      slots = SlotsGame::State{};
+    }
     const uint32_t expected = crc ^ 0xffffffffU;
     return number(4, false) == expected && !failed && !remaining && offset == buffered &&
            BlackjackGame::validateState(state) && BaccaratGame::validateState(baccarat) &&
-           RouletteGame::validateState(roulette);
+           RouletteGame::validateState(roulette) && SlotsGame::validateState(slots);
   }
 
  private:
@@ -273,19 +293,19 @@ class BinaryReader {
 bool readState(const char* path, StoredState& state) {
   HalFile file;
   if (!Storage.openFileForRead("CAS", path, file) ||
-      (file.size() != FILE_BYTES && file.size() != VERSION_3_FILE_BYTES && file.size() != VERSION_2_FILE_BYTES &&
-       file.size() != LEGACY_FILE_BYTES))
+      (file.size() != FILE_BYTES && file.size() != VERSION_4_FILE_BYTES && file.size() != VERSION_3_FILE_BYTES &&
+       file.size() != VERSION_2_FILE_BYTES && file.size() != LEGACY_FILE_BYTES))
     return false;
   BinaryReader reader(file);
   return reader.read(state);
 }
 
 bool writeState(const BlackjackGame::State& state, const BaccaratGame::State& baccarat,
-                const RouletteGame::State& roulette) {
+                const RouletteGame::State& roulette, const SlotsGame::State& slots) {
   HalFile file;
   if (!Storage.openFileForWrite("CAS", TEMP_PATH, file)) return false;
   BinaryWriter writer(file);
-  if (!writer.write(state, baccarat, roulette)) return false;
+  if (!writer.write(state, baccarat, roulette, slots)) return false;
   file.flush();
   // Close before reading back and renaming the temporary file.
   return file.close();
@@ -335,6 +355,12 @@ bool sameState(const RouletteGame::State& left, const RouletteGame::State& right
   }
   return true;
 }
+
+bool sameState(const SlotsGame::State& left, const SlotsGame::State& right) {
+  return left.wagerCents == right.wagerCents && left.returnCents == right.returnCents &&
+         std::memcmp(left.reels, right.reels, sizeof(left.reels)) == 0 && left.revealedReels == right.revealedReels &&
+         left.phase == right.phase;
+}
 }  // namespace
 
 bool CasinoStore::dealBaccarat(const BaccaratGame::Bet bet, const int64_t wagerCents, const BaccaratGame::Random random,
@@ -376,6 +402,25 @@ bool CasinoStore::revealRoulette() {
   return true;
 }
 
+bool CasinoStore::spinSlots(const int64_t wagerCents, const SlotsGame::Random random, void* context) {
+  if (isReadOnly() || !slotsGame.startRound(wagerCents, blackjack.state().balanceCents, random, context)) return false;
+  if (!blackjack.settleExternalWager(wagerCents, 0)) {
+    LOG_ERR("CAS", "Invalid Slots wager");
+    return false;
+  }
+  return true;
+}
+
+bool CasinoStore::revealSlots() {
+  if (isReadOnly() || !slotsGame.revealNext()) return false;
+  if (slotsGame.state().phase == SlotsGame::Phase::Settled &&
+      !blackjack.creditExternalReturn(slotsGame.state().returnCents)) {
+    LOG_ERR("CAS", "Invalid Slots return");
+    return false;
+  }
+  return true;
+}
+
 bool CasinoStore::load() {
   status = LoadStatus::Error;
   primaryValid = false;
@@ -388,6 +433,7 @@ bool CasinoStore::load() {
     blackjack.reset();
     baccaratGame.reset();
     rouletteGame.reset();
+    slotsGame.reset();
     status = LoadStatus::Empty;
     return true;
   }
@@ -402,7 +448,8 @@ bool CasinoStore::load() {
   for (const char* path : PATHS) {
     if (!Storage.exists(path)) continue;
     if (!readState(path, *candidate) || !blackjack.restore(candidate->blackjack) ||
-        !baccaratGame.restore(candidate->baccarat) || !rouletteGame.restore(candidate->roulette)) {
+        !baccaratGame.restore(candidate->baccarat) || !rouletteGame.restore(candidate->roulette) ||
+        !slotsGame.restore(candidate->slots)) {
       LOG_ERR("CAS", "Invalid or unreadable casino file: %s", path);
       continue;
     }
@@ -417,7 +464,8 @@ bool CasinoStore::load() {
 
 bool CasinoStore::save() {
   if (isReadOnly() || !Storage.ready() || !BlackjackGame::validateState(blackjack.state()) ||
-      !BaccaratGame::validateState(baccaratGame.state()) || !RouletteGame::validateState(rouletteGame.state())) {
+      !BaccaratGame::validateState(baccaratGame.state()) || !RouletteGame::validateState(rouletteGame.state()) ||
+      !SlotsGame::validateState(slotsGame.state())) {
     LOG_ERR("CAS", "Cannot save an unavailable or invalid casino state");
     return false;
   }
@@ -434,10 +482,10 @@ bool CasinoStore::save() {
     recoveredFromTemporary = false;
   }
   if (!Storage.ensureDirectoryExists("/.crosspoint") ||
-      !writeState(blackjack.state(), baccaratGame.state(), rouletteGame.state()) ||
+      !writeState(blackjack.state(), baccaratGame.state(), rouletteGame.state(), slotsGame.state()) ||
       !readState(TEMP_PATH, *verification) || !sameState(blackjack.state(), verification->blackjack) ||
       !sameState(baccaratGame.state(), verification->baccarat) ||
-      !sameState(rouletteGame.state(), verification->roulette)) {
+      !sameState(rouletteGame.state(), verification->roulette) || !sameState(slotsGame.state(), verification->slots)) {
     LOG_ERR("CAS", "Failed to write and verify casino state");
     return false;
   }

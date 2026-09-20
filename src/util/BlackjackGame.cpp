@@ -76,7 +76,7 @@ bool BlackjackGame::settleExternalWager(const int64_t wagerCents, const int64_t 
 }
 
 bool BlackjackGame::creditExternalReturn(const int64_t returnCents) {
-  if (returnCents < 0 || returnCents > MAX_BALANCE_CENTS * 36) return false;
+  if (returnCents < 0 || returnCents > MAX_BALANCE_CENTS * 100) return false;
   credit(returnCents);
   return true;
 }
