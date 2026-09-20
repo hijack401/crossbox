@@ -306,7 +306,7 @@ inline void lobbyIcon(fui::DrawTarget& target, fui::Rect rect, const fui::ThemeT
                                hub};
     target.fill(centerRect, paper);
     target.stroke(centerRect, ink, stroke);
-  } else if (game == 3) {
+  } else if (game == 1 || game == 3) {
     const int16_t width = side * 3 / 5;
     const int16_t height = side * 4 / 5;
     const int16_t offset = std::max<int16_t>(stroke * 2, side / 6);
@@ -320,7 +320,7 @@ inline void lobbyIcon(fui::DrawTarget& target, fui::Rect rect, const fui::ThemeT
     suit(target,
          fui::Rect{static_cast<int16_t>(front.x + (front.width - symbol) / 2),
                    static_cast<int16_t>(front.y + (front.height - symbol) / 2), symbol, symbol},
-         theme, 1);
+         theme, game == 1 ? 3 : 1);
   }
 }
 }  // namespace ui_casino

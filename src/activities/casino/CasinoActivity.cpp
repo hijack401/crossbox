@@ -494,13 +494,11 @@ void CasinoActivity::buildLobby(UiScreen& screen) {
                        static_cast<int16_t>(header.width / 3), header.height},
              tr(STR_CASINO_RULES), RULES, false, true, false);
   const int16_t captionHeight = line * (clockValid ? 1 : 2);
-  const int16_t fullMenuHeight =
-      (theme.rowHeight + theme.spaceLg) * 3 + theme.rowHeight * 2 + theme.spaceLg * 2 + theme.spaceMd * 3;
+  const int16_t fullMenuHeight = (theme.rowHeight + theme.spaceLg) * 4 + theme.spaceMd * 3;
   const bool compact = screen.contentRect().height < fullMenuHeight + line * 2 + captionHeight + theme.spaceLg;
   const int16_t rowHeight = compact ? theme.minTouchSize : theme.rowHeight + theme.spaceLg;
-  const int16_t featuredHeight = compact ? theme.rowHeight : theme.rowHeight * 2 + theme.spaceLg * 2;
   const int16_t gap = compact ? theme.spaceSm : theme.spaceMd;
-  const auto menu = screen.takeBottom(rowHeight * 3 + featuredHeight + gap * 3);
+  const auto menu = screen.takeBottom(rowHeight * 4 + gap * 3);
   const auto moneyArea = screen.takeTop(
       std::min<int16_t>(theme.rowHeight,
                         std::max<int16_t>(line, screen.contentRect().height - captionHeight - theme.spaceSm)),
@@ -514,9 +512,8 @@ void CasinoActivity::buildLobby(UiScreen& screen) {
                        caption);
   int16_t y = menu.y - screen.contentRect().height / 2;
   for (uint8_t i = 0; i < 4; ++i) {
-    const int16_t height = i == 1 ? featuredHeight : rowHeight;
-    drawLobbyGame(screen, fui::Rect{menu.x, y, menu.width, height}, i);
-    y += height + gap;
+    drawLobbyGame(screen, fui::Rect{menu.x, y, menu.width, rowHeight}, i);
+    y += rowHeight + gap;
   }
 }
 
@@ -525,9 +522,10 @@ void CasinoActivity::drawLobbyGame(UiScreen& screen, fui::Rect row, uint8_t game
   const auto ink = fui::Paint::solid(theme.bodyText.color);
   static constexpr StrId GAMES[] = {StrId::STR_CASINO_SLOTS, StrId::STR_CASINO_BLACKJACK, StrId::STR_CASINO_ROULETTE,
                                     StrId::STR_CASINO_BACCARAT};
-  if (game == 3) {
-    drawButton(screen, row, nullptr, BACCARAT);
-    const auto state = screen.frame().stateFor(ACTION_CONTROL, BACCARAT, buttonProps.state);
+  if (game == 1 || game == 3) {
+    const int control = game == 1 ? BLACKJACK : BACCARAT;
+    drawButton(screen, row, nullptr, control);
+    const auto state = screen.frame().stateFor(ACTION_CONTROL, control, buttonProps.state);
     const auto foreground = buttonProps.styles.resolve(state).foreground;
     auto text = fui::textStyleWithForeground(buttonProps.text, foreground);
     text.align = fui::TextAlign::Left;
@@ -538,7 +536,7 @@ void CasinoActivity::drawLobbyGame(UiScreen& screen, fui::Rect row, uint8_t game
                          theme, game);
     screen.target().text(fui::Rect{static_cast<int16_t>(row.x + side + theme.spaceLg * 2), row.y,
                                    static_cast<int16_t>(row.width - side - theme.spaceLg * 4), row.height},
-                         tr(STR_CASINO_BACCARAT), text);
+                         I18N.get(GAMES[game]), text);
     const int16_t x = row.right() - theme.spaceLg * 2;
     const int16_t y = row.y + row.height / 2;
     screen.target().line(fui::Point{x, static_cast<int16_t>(y - theme.spaceSm)},
@@ -547,57 +545,19 @@ void CasinoActivity::drawLobbyGame(UiScreen& screen, fui::Rect row, uint8_t game
                          fui::Point{x, static_cast<int16_t>(y + theme.spaceSm)}, 2, foreground);
     return;
   }
-  if (game != 1) {
-    const int16_t side = std::min<int16_t>(theme.minTouchSize, row.height - theme.spaceMd * 2);
-    ui_casino::lobbyIcon(screen.target(),
-                         fui::Rect{static_cast<int16_t>(row.x + theme.spaceLg),
-                                   static_cast<int16_t>(row.y + (row.height - side) / 2), side, side},
-                         theme, game);
-    drawLabel(screen,
-              fui::Rect{static_cast<int16_t>(row.x + side + theme.spaceLg * 2), row.y,
-                        static_cast<int16_t>(row.width - side - theme.spaceLg * 3), row.height},
-              I18N.get(GAMES[game]), true);
-    screen.target().line(fui::Point{row.x, static_cast<int16_t>(row.bottom() - 1)},
-                         fui::Point{static_cast<int16_t>(row.right() - 1), static_cast<int16_t>(row.bottom() - 1)}, 1,
-                         ink);
-    ui_casino::soften(screen.target(), row, theme);
-    return;
-  }
-
-  drawButton(screen, row, nullptr, BLACKJACK, true);
-  const auto state = screen.frame().stateFor(ACTION_CONTROL, BLACKJACK, buttonProps.state);
-  const auto foreground = buttonProps.styles.resolve(state).foreground;
-  auto text = fui::textStyleWithForeground(buttonProps.text, foreground);
-  text.align = fui::TextAlign::Left;
-  screen.target().stroke(row.inset(fui::Insets{theme.spaceSm, theme.spaceSm, theme.spaceSm, theme.spaceSm}), foreground,
-                         1);
-  const bool illustrated = row.height >= theme.rowHeight * 2;
-  const int16_t cardHeight = illustrated ? std::min<int16_t>(theme.rowHeight * 2, row.height - theme.spaceMd * 3) : 0;
-  const int16_t cardWidth = cardHeight * 2 / 3;
-  const int16_t artWidth = illustrated ? cardWidth + theme.spaceLg + theme.spaceMd : theme.spaceLg;
-  const int16_t artX = row.right() - theme.spaceLg - artWidth;
-  const fui::Rect label{static_cast<int16_t>(row.x + theme.spaceLg), row.y,
-                        static_cast<int16_t>(artX - row.x - theme.spaceLg * 2), row.height};
-  screen.target().text(label, tr(STR_CASINO_BLACKJACK), text);
-  const int16_t arrowX = std::min<int16_t>(
-      label.right() - theme.spaceLg,
-      label.x + screen.target().measureText(text.font, tr(STR_CASINO_BLACKJACK), text).width + theme.spaceLg);
-  const int16_t arrowY = row.y + row.height / 2;
-  const int16_t arrowSize = theme.spaceMd;
-  screen.target().line(fui::Point{arrowX, arrowY}, fui::Point{static_cast<int16_t>(arrowX + arrowSize * 2), arrowY}, 2,
-                       foreground);
-  screen.target().line(fui::Point{static_cast<int16_t>(arrowX + arrowSize), static_cast<int16_t>(arrowY - arrowSize)},
-                       fui::Point{static_cast<int16_t>(arrowX + arrowSize * 2), arrowY}, 2, foreground);
-  screen.target().line(fui::Point{static_cast<int16_t>(arrowX + arrowSize), static_cast<int16_t>(arrowY + arrowSize)},
-                       fui::Point{static_cast<int16_t>(arrowX + arrowSize * 2), arrowY}, 2, foreground);
-  if (illustrated) {
-    const int16_t top = row.y + (row.height - cardHeight - theme.spaceMd) / 2;
-    ui_casino::card(screen.target(),
-                    fui::Rect{static_cast<int16_t>(artX + theme.spaceLg + theme.spaceMd), top, cardWidth, cardHeight},
-                    theme, 12, false);
-    ui_casino::card(screen.target(), fui::Rect{artX, static_cast<int16_t>(top + theme.spaceMd), cardWidth, cardHeight},
-                    theme, 39, false);
-  }
+  const int16_t side = std::min<int16_t>(theme.minTouchSize, row.height - theme.spaceMd * 2);
+  ui_casino::lobbyIcon(screen.target(),
+                       fui::Rect{static_cast<int16_t>(row.x + theme.spaceLg),
+                                 static_cast<int16_t>(row.y + (row.height - side) / 2), side, side},
+                       theme, game);
+  drawLabel(screen,
+            fui::Rect{static_cast<int16_t>(row.x + side + theme.spaceLg * 2), row.y,
+                      static_cast<int16_t>(row.width - side - theme.spaceLg * 3), row.height},
+            I18N.get(GAMES[game]), true);
+  screen.target().line(fui::Point{row.x, static_cast<int16_t>(row.bottom() - 1)},
+                       fui::Point{static_cast<int16_t>(row.right() - 1), static_cast<int16_t>(row.bottom() - 1)}, 1,
+                       ink);
+  ui_casino::soften(screen.target(), row, theme);
 }
 
 void CasinoActivity::buildTable(UiScreen& screen) {
