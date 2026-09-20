@@ -664,23 +664,37 @@ void BaseTheme::drawRecentBookCover(GfxRenderer& renderer, Rect rect, const std:
   }
 }
 
-int BaseTheme::getMenuRowHeight(const GfxRenderer&) const { return UITheme::getInstance().getMetrics().menuRowHeight; }
+int BaseTheme::getMenuRowHeight(const GfxRenderer& renderer) const {
+  return std::max(UITheme::getInstance().getMetrics().menuRowHeight, renderer.getLineHeight(UI_10_FONT_ID) + 16);
+}
+
+void BaseTheme::drawMenuScrollBar(const GfxRenderer& renderer, Rect rect, int itemCount, int firstVisibleRow,
+                                  int visibleRows) const {
+  if (visibleRows <= 0 || itemCount <= visibleRows) return;
+  const auto& metrics = UITheme::getInstance().getMetrics();
+  const int thumbHeight = std::max(10, rect.height * visibleRows / itemCount);
+  const int maxStart = std::max(1, itemCount - visibleRows);
+  const int thumbY = rect.y + std::clamp(firstVisibleRow, 0, maxStart) * (rect.height - thumbHeight) / maxStart;
+  renderer.fillRect(rect.x + rect.width - metrics.scrollBarRightOffset - metrics.scrollBarWidth, thumbY,
+                    metrics.scrollBarWidth, thumbHeight);
+}
 
 void BaseTheme::drawButtonMenu(GfxRenderer& renderer, Rect rect, int buttonCount, int selectedIndex,
                                const std::function<std::string(int index)>& buttonLabel,
                                const std::function<UIIcon(int index)>& rowIcon) const {
+  const int rowHeight = getMenuRowHeight(renderer);
+  renderer.setClipRect(rect.x, rect.y, rect.width, rect.height);
   for (int i = 0; i < buttonCount; ++i) {
-    const int tileY = BaseMetrics::values.verticalSpacing + rect.y +
-                      static_cast<int>(i) * (BaseMetrics::values.menuRowHeight + BaseMetrics::values.menuSpacing);
+    const int tileY = rect.y + i * (rowHeight + BaseMetrics::values.menuSpacing);
 
     const bool selected = selectedIndex == i;
 
     if (selected) {
       renderer.fillRect(rect.x + BaseMetrics::values.contentSidePadding, tileY,
-                        rect.width - BaseMetrics::values.contentSidePadding * 2, BaseMetrics::values.menuRowHeight);
+                        rect.width - BaseMetrics::values.contentSidePadding * 2, rowHeight);
     } else {
       renderer.drawRect(rect.x + BaseMetrics::values.contentSidePadding, tileY,
-                        rect.width - BaseMetrics::values.contentSidePadding * 2, BaseMetrics::values.menuRowHeight);
+                        rect.width - BaseMetrics::values.contentSidePadding * 2, rowHeight);
     }
 
     std::string labelStr = buttonLabel(i);
@@ -688,11 +702,11 @@ void BaseTheme::drawButtonMenu(GfxRenderer& renderer, Rect rect, int buttonCount
     const int textWidth = renderer.getTextWidth(UI_10_FONT_ID, label);
     const int textX = rect.x + (rect.width - textWidth) / 2;
     const int lineHeight = renderer.getLineHeight(UI_10_FONT_ID);
-    const int textY =
-        tileY + (BaseMetrics::values.menuRowHeight - lineHeight) / 2;  // vertically centered assuming y is top of text
+    const int textY = tileY + (rowHeight - lineHeight) / 2;
     // Invert text when the tile is selected, to contrast with the filled background
     renderer.drawText(UI_10_FONT_ID, textX, textY, label, selectedIndex != i);
   }
+  renderer.setClipRect(0, 0, renderer.getScreenWidth(), renderer.getScreenHeight());
 }
 
 Rect BaseTheme::drawPopup(const GfxRenderer& renderer, const char* message) const {

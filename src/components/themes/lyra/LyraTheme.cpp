@@ -22,6 +22,7 @@
 #include "components/icons/library.h"
 #include "components/icons/recent.h"
 #include "components/icons/settings2.h"
+#include "components/icons/timer.h"
 #include "components/icons/transfer.h"
 #include "components/icons/wifi.h"
 #include "fontIds.h"
@@ -44,6 +45,8 @@ const uint8_t* iconForName(UIIcon icon) {
       return BookIcon;
     case UIIcon::Recent:
       return RecentIcon;
+    case UIIcon::Timer:
+      return TimerIcon;
     case UIIcon::Settings:
       return Settings2Icon;
     case UIIcon::Transfer:
@@ -309,14 +312,19 @@ void LyraTheme::drawEmptyRecents(const GfxRenderer& renderer, const Rect rect) c
   renderer.drawText(UI_10_FONT_ID, rect.x + padding, rect.y + rect.height / 2 + 2, tr(STR_START_READING), true);
 }
 
+int LyraTheme::getMenuRowHeight(const GfxRenderer& renderer) const {
+  return std::max(LyraMetrics::values.menuRowHeight, renderer.getLineHeight(UI_12_FONT_ID) + 16);
+}
+
 void LyraTheme::drawButtonMenu(GfxRenderer& renderer, Rect rect, int buttonCount, int selectedIndex,
                                const std::function<std::string(int index)>& buttonLabel,
                                const std::function<UIIcon(int index)>& rowIcon) const {
+  const int rowHeight = getMenuRowHeight(renderer);
+  renderer.setClipRect(rect.x, rect.y, rect.width, rect.height);
   for (int i = 0; i < buttonCount; ++i) {
     int tileWidth = rect.width - LyraMetrics::values.contentSidePadding * 2;
     Rect tileRect = Rect{rect.x + LyraMetrics::values.contentSidePadding,
-                         rect.y + i * (LyraMetrics::values.menuRowHeight + LyraMetrics::values.menuSpacing), tileWidth,
-                         LyraMetrics::values.menuRowHeight};
+                         rect.y + i * (rowHeight + LyraMetrics::values.menuSpacing), tileWidth, rowHeight};
 
     const bool selected = selectedIndex == i;
 
@@ -328,7 +336,7 @@ void LyraTheme::drawButtonMenu(GfxRenderer& renderer, Rect rect, int buttonCount
     const char* label = labelStr.c_str();
     int textX = tileRect.x + 16;
     const int lineHeight = renderer.getLineHeight(UI_12_FONT_ID);
-    const int textY = tileRect.y + (LyraMetrics::values.menuRowHeight - lineHeight) / 2;
+    const int textY = tileRect.y + (rowHeight - lineHeight) / 2;
 
     if (rowIcon != nullptr) {
       UIIcon icon = rowIcon(i);
@@ -341,4 +349,5 @@ void LyraTheme::drawButtonMenu(GfxRenderer& renderer, Rect rect, int buttonCount
 
     renderer.drawText(UI_12_FONT_ID, textX, textY, label, true);
   }
+  renderer.setClipRect(0, 0, renderer.getScreenWidth(), renderer.getScreenHeight());
 }
