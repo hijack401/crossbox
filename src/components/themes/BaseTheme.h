@@ -136,6 +136,7 @@ enum UIIcon {
   Bookmark,
   Usb,
   Blocks,
+  TodoList,
   Timer
 };
 

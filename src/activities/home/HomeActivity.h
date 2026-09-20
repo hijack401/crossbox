@@ -45,6 +45,8 @@ class HomeActivity final : public Activity {
     ++i;
     if (item == HomeMenuItem::SETTINGS_MENU) return i;
     ++i;
+    if (item == HomeMenuItem::TODO_LIST) return i;
+    ++i;
     if (item == HomeMenuItem::POMODORO) return i;
     return 0;
   }
@@ -57,6 +59,7 @@ class HomeActivity final : public Activity {
     if (hasOpdsUrl && idx == i++) return HomeMenuItem::OPDS_BROWSER;
     if (idx == i++) return HomeMenuItem::FILE_TRANSFER;
     if (idx == i++) return HomeMenuItem::SETTINGS_MENU;
+    if (idx == i++) return HomeMenuItem::TODO_LIST;
     if (idx == i) return HomeMenuItem::POMODORO;
     return HomeMenuItem::NONE;
   }
@@ -64,6 +67,7 @@ class HomeActivity final : public Activity {
   void onFileBrowserOpen();
   void onLibraryOpen();
   void onSettingsOpen();
+  void onTodoListOpen();
   void onPomodoroOpen();
   void onFileTransferOpen();
   void onOpdsBrowserOpen();

@@ -982,6 +982,11 @@ void KeyboardEntryActivity::render(RenderLock&&) {
   props.altText.font = fui::GfxRendererTarget::FONT_SMALL;
   props.gap = static_cast<int16_t>(metrics.keyboardKeySpacing);
   props.padding = fui::Insets{0, 0, 0, 0};
+  if (squareCorners) {
+    props.keyRadius = 0;
+    props.keyStyles = fui::defaultButtonStyles();
+    fui::setStyleRadius(props.keyStyles, 0);
+  }
   // Fingers land low on the bottom row (occlusion) and there is no key below
   // to catch the miss — extend its hit band down to the button hints bar.
   const int hintsTop = renderer.getScreenHeight() - metrics.buttonHintsHeight;

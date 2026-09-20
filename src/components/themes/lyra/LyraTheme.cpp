@@ -23,6 +23,7 @@
 #include "components/icons/recent.h"
 #include "components/icons/settings2.h"
 #include "components/icons/timer.h"
+#include "components/icons/todolist.h"
 #include "components/icons/transfer.h"
 #include "components/icons/wifi.h"
 #include "fontIds.h"
@@ -45,6 +46,8 @@ const uint8_t* iconForName(UIIcon icon) {
       return BookIcon;
     case UIIcon::Recent:
       return RecentIcon;
+    case UIIcon::TodoList:
+      return TodoListIcon;
     case UIIcon::Timer:
       return TimerIcon;
     case UIIcon::Settings:

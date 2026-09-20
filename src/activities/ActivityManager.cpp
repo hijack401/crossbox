@@ -24,6 +24,7 @@
 #include "reader/ReaderActivity.h"
 #include "settings/OpdsServerListActivity.h"
 #include "settings/SettingsActivity.h"
+#include "todolist/TodoListActivity.h"
 #include "util/BmpViewerActivity.h"
 #include "util/FrontlightPanelActivity.h"
 #include "util/FullScreenMessageActivity.h"
@@ -247,6 +248,15 @@ void ActivityManager::goToUsbDrive() {
 
 void ActivityManager::goToSettings() { replaceActivity(std::make_unique<SettingsActivity>(renderer, mappedInput)); }
 
+void ActivityManager::goToTodoList() {
+  auto activity = makeUniqueNoThrow<TodoListActivity>(renderer, mappedInput);
+  if (!activity) {
+    LOG_ERR("ACT", "OOM: Todolist activity");
+    return;
+  }
+  replaceActivity(std::move(activity));
+}
+
 void ActivityManager::goToPomodoro() {
   auto activity = makeUniqueNoThrow<PomodoroActivity>(renderer, mappedInput);
   if (!activity) {
@@ -325,6 +335,8 @@ void ActivityManager::goHome(HomeMenuItem initialMenuItem, bool cleanInitialRefr
       initialMenuItem = HomeMenuItem::FILE_TRANSFER;
     } else if (activityName == "Settings") {
       initialMenuItem = HomeMenuItem::SETTINGS_MENU;
+    } else if (activityName == "TodoList") {
+      initialMenuItem = HomeMenuItem::TODO_LIST;
     } else if (activityName == "Pomodoro") {
       initialMenuItem = HomeMenuItem::POMODORO;
     }

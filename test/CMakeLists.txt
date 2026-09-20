@@ -72,3 +72,4 @@ add_subdirectory(absolute_grayscale)
 
 add_subdirectory(sd_card_font)
 add_subdirectory(pomodoro_timer)
+add_subdirectory(todo_list)

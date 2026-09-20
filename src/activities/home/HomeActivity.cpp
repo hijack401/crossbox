@@ -64,7 +64,7 @@ HomeActivity::Layout HomeActivity::getLayout() const {
 }
 
 int HomeActivity::getMenuItemCount() const {
-  int count = 5;  // File Browser, Library, File transfer, Settings, Pomodoro
+  int count = 6;  // File Browser, Library, File transfer, Settings, Todolist, Pomodoro
   if (!recentBooks.empty()) {
     count += recentBooks.size();
   }
@@ -235,6 +235,9 @@ void HomeActivity::loop() {
       case HomeMenuItem::SETTINGS_MENU:
         onSettingsOpen();
         break;
+      case HomeMenuItem::TODO_LIST:
+        onTodoListOpen();
+        break;
       case HomeMenuItem::POMODORO:
         onPomodoroOpen();
         break;
@@ -348,7 +351,7 @@ void HomeActivity::render(RenderLock&&) {
                             bufferRestored, std::bind(&HomeActivity::storeCoverBuffer, this));
   }
 
-  constexpr int MAX_MENU_ITEMS = 9;
+  constexpr int MAX_MENU_ITEMS = 10;
   std::array<const char*, MAX_MENU_ITEMS> menuItems{};
   std::array<UIIcon, MAX_MENU_ITEMS> menuIcons{};
   int menuItemCount = 0;
@@ -369,6 +372,7 @@ void HomeActivity::render(RenderLock&&) {
   }
   addMenuItem(tr(STR_FILE_TRANSFER), Transfer);
   addMenuItem(tr(STR_SETTINGS_TITLE), Settings);
+  addMenuItem(tr(STR_TODO_LIST), TodoList);
   addMenuItem(tr(STR_POMODORO), Timer);
 
   const int selectedRow = selectorIndex - (layout.recentsInMenu ? 0 : static_cast<int>(recentBooks.size()));
@@ -400,6 +404,8 @@ void HomeActivity::onFileBrowserOpen() { activityManager.goToFileBrowser(); }
 void HomeActivity::onLibraryOpen() { activityManager.goToLibrary(); }
 
 void HomeActivity::onSettingsOpen() { activityManager.goToSettings(); }
+
+void HomeActivity::onTodoListOpen() { activityManager.goToTodoList(); }
 
 void HomeActivity::onPomodoroOpen() { activityManager.goToPomodoro(); }
 
