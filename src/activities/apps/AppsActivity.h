@@ -9,7 +9,7 @@ class AppsActivity final : public UiListActivity {
   void onExit() override;
 
  private:
-  static constexpr int MENU_ITEM_COUNT = 3;
+  static constexpr int MENU_ITEM_COUNT = 4;
   const AppMenuItem initialMenuItem;
   freeink::ui::ListItem rowItems[MENU_ITEM_COUNT]{};
   freeink::ui::ListProps listProps;

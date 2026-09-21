@@ -31,3 +31,12 @@ inline int uiGameDisplayFontId() {
   return NOTOSERIF_18_FONT_ID;
 #endif
 }
+
+// A quiet sans-serif display face for the breathing guide.
+inline int uiBreathworkDisplayFontId() {
+#ifdef OMIT_FONTS
+  return uiScaleSpec().titleFontId;
+#else
+  return NOTOSANS_18_FONT_ID;
+#endif
+}

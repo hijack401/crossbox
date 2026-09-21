@@ -14,7 +14,8 @@ AppsActivity::AppsActivity(GfxRenderer& renderer, MappedInputManager& mappedInpu
     : UiListActivity("Apps", renderer, mappedInput), initialMenuItem(initialMenuItem) {}
 
 void AppsActivity::onEnter() {
-  static constexpr StrId LABELS[] = {StrId::STR_TODO_LIST, StrId::STR_POMODORO, StrId::STR_CASINO};
+  static constexpr StrId LABELS[] = {StrId::STR_TODO_LIST, StrId::STR_POMODORO, StrId::STR_CASINO,
+                                     StrId::STR_BREATHWORK};
   for (int i = 0; i < MENU_ITEM_COUNT; ++i) {
     rowItems[i].label = I18N.get(LABELS[i]);
     rowItems[i].actionValue = static_cast<int16_t>(i);
@@ -22,6 +23,7 @@ void AppsActivity::onEnter() {
   rowItems[0].icon = fui::bitmapFromIcon(icon_apps_todolist_32);
   rowItems[1].icon = fui::bitmapFromIcon(icon_apps_timer_32);
   rowItems[2].icon = fui::bitmapFromIcon(icon_apps_casino_32);
+  rowItems[3].icon = fui::bitmapFromIcon(icon_apps_breathwork_32);
   UiListActivity::onEnter();
   moveSelectionTo(std::clamp(static_cast<int>(initialMenuItem), 0, MENU_ITEM_COUNT - 1));
 }
@@ -74,6 +76,9 @@ void AppsActivity::activateIndex(int index) {
       break;
     case AppMenuItem::CASINO:
       activityManager.goToCasino();
+      break;
+    case AppMenuItem::BREATHWORK:
+      activityManager.goToBreathwork();
       break;
   }
 }

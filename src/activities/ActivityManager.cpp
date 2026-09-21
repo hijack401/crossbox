@@ -14,6 +14,7 @@
 #include "apps/AppsActivity.h"
 #include "boot_sleep/BootActivity.h"
 #include "boot_sleep/SleepActivity.h"
+#include "breathwork/BreathworkActivity.h"
 #include "browser/OpdsBookBrowserActivity.h"
 #include "casino/CasinoActivity.h"
 #include "home/CrashActivity.h"
@@ -286,6 +287,15 @@ void ActivityManager::goToCasino() {
   replaceActivity(std::move(activity));
 }
 
+void ActivityManager::goToBreathwork() {
+  auto activity = makeUniqueNoThrow<BreathworkActivity>(renderer, mappedInput);
+  if (!activity) {
+    LOG_ERR("ACT", "OOM: Breathwork activity");
+    return;
+  }
+  replaceActivity(std::move(activity));
+}
+
 void ActivityManager::goToFileBrowser(std::string path) {
   replaceActivity(std::make_unique<FileBrowserActivity>(renderer, mappedInput, std::move(path)));
 }
@@ -356,7 +366,7 @@ void ActivityManager::goHome(HomeMenuItem initialMenuItem, bool cleanInitialRefr
     } else if (activityName == "Settings") {
       initialMenuItem = HomeMenuItem::SETTINGS_MENU;
     } else if (activityName == "Apps" || activityName == "TodoList" || activityName == "Pomodoro" ||
-               activityName == "Casino") {
+               activityName == "Casino" || activityName == "Breathwork") {
       initialMenuItem = HomeMenuItem::APPS;
     }
   }

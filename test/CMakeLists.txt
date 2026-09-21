@@ -72,6 +72,7 @@ add_subdirectory(absolute_grayscale)
 
 add_subdirectory(sd_card_font)
 add_subdirectory(pomodoro_timer)
+add_subdirectory(breathwork_session)
 add_subdirectory(todo_list)
 add_subdirectory(blackjack)
 add_subdirectory(casino_store)
