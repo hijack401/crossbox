@@ -139,8 +139,11 @@ class CasinoActivity final : public Activity, private UiAppHost {
   void buildSlotsPaytable(UiScreen& screen);
   void activateFarkle(int control);
   int farklePrimaryControl() const;
+  void buildFarkleTable(UiScreen& screen);
   void buildFarkleBetting(UiScreen& screen);
   void buildFarkleRound(UiScreen& screen);
+  void drawFarkleScoreboard(UiScreen& screen, freeink::ui::Rect area);
+  void drawFarkleOutcome(UiScreen& screen, freeink::ui::Rect area);
   void buildFarklePaytable(UiScreen& screen);
   void drawFarkleDice(UiScreen& screen, freeink::ui::Rect area);
   void activateRoulette(int control);

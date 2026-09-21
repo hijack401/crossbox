@@ -9,6 +9,7 @@
 #include <cstring>
 #include <ctime>
 
+#include "components/UIScale.h"
 #include "components/UITheme.h"
 #include "components/UiCasino.h"
 #include "components/UiFarkle.h"
@@ -490,13 +491,20 @@ void CasinoActivity::drawButton(UiScreen& screen, fui::Rect rect, const char* la
     props.styles.normal.border = ink;
     props.styles.normal.borderWidth = 1;
   }
-  const bool farkleSelectionControl =
-      (control >= F_DIE_BASE && control < F_DIE_BASE + 6) || (control >= F_TARGET_BASE && control < F_TARGET_BASE + 3);
-  props.styles.focused = primary && farkleSelectionControl ? props.styles.selected : props.styles.normal;
+  const bool farkleControl =
+      (view == View::Table && tableGame == Game::Farkle) || (view == View::Rules && rulesGame == Game::Farkle);
+  if (farkleControl && outlined) {
+    props.styles.disabled.border = ink;
+    props.styles.disabled.borderWidth = 1;
+  }
+  props.styles.focused = primary && farkleControl ? props.styles.selected : props.styles.normal;
   props.styles.focused.border = ink;
   props.styles.focused.borderWidth = control == RULES ? 0 : 3;
   if (buttonNavigation && selectedControl == control) props.state = fui::StateFocused;
   fui::button(screen.frame(), rect, props);
+  if (farkleControl && primary && enabled && buttonNavigation && selectedControl == control)
+    screen.target().stroke(rect.inset(fui::makeInsets(screen.theme().spaceSm)),
+                           fui::Paint::solid(fui::invertedColor(screen.theme().bodyText.color)), 1);
   if (control == RULES) {
     const auto state = screen.frame().stateFor(props.action, props.value, props.state);
     auto text = fui::textStyleWithForeground(props.text, props.styles.resolve(state).foreground);
@@ -527,6 +535,10 @@ void CasinoActivity::drawButton(UiScreen& screen, fui::Rect rect, const char* la
 
 void CasinoActivity::buildScreen(UiScreen& screen) {
   focusCount = 0;
+  const bool farkleDisplay =
+      (view == View::Table && tableGame == Game::Farkle) || (view == View::Rules && rulesGame == Game::Farkle);
+  uiTarget.setFont(fui::GfxRendererTarget::FONT_TITLE,
+                   farkleDisplay ? uiGameDisplayFontId() : uiScaleSpec().titleFontId);
   const auto& theme = screen.theme();
   const Rect safe = UITheme::getInstance().getScreenSafeArea(renderer, true, false);
   screen.setContentMarginFromScreen(fui::Insets{
@@ -561,6 +573,7 @@ void CasinoActivity::buildScreen(UiScreen& screen) {
   bool focused = false;
   for (int i = 0; i < focusCount; ++i) focused |= focusTargets[i] == selectedControl;
   if (!focused && focusCount) selectedControl = focusTargets[0];
+  uiTarget.setFont(fui::GfxRendererTarget::FONT_TITLE, uiScaleSpec().titleFontId);
 }
 
 void CasinoActivity::buildLobby(UiScreen& screen) {
@@ -628,6 +641,10 @@ void CasinoActivity::drawLobbyGame(UiScreen& screen, fui::Rect row, uint8_t game
 }
 
 void CasinoActivity::buildTable(UiScreen& screen) {
+  if (tableGame == Game::Farkle) {
+    buildFarkleTable(screen);
+    return;
+  }
   const auto& theme = screen.theme();
   const bool compact = screen.contentRect().height < theme.rowHeight * 7;
   const int16_t smallLine = screen.target().lineHeight(theme.smallText.font);
@@ -652,16 +669,11 @@ void CasinoActivity::buildTable(UiScreen& screen) {
   drawButton(screen,
              fui::Rect{static_cast<int16_t>(header.right() - header.width / 3), header.y,
                        static_cast<int16_t>(header.width / 3), header.height},
-             tableGame == Game::Farkle ? tr(STR_FARKLE_SCORING) : tr(STR_CASINO_RULES), RULES, false, true, false);
+             tr(STR_CASINO_RULES), RULES, false, true, false);
   screen.target().line(fui::Point{header.x, static_cast<int16_t>(header.bottom() + theme.spaceSm)},
                        fui::Point{header.right(), static_cast<int16_t>(header.bottom() + theme.spaceSm)}, 1,
                        fui::Paint::solid(theme.bodyText.color));
-  if (tableGame == Game::Farkle) {
-    if (store.farkle().state().phase == FarkleGame::Phase::Betting)
-      buildFarkleBetting(screen);
-    else
-      buildFarkleRound(screen);
-  } else if (tableGame == Game::Slots) {
+  if (tableGame == Game::Slots) {
     if (store.slots().state().phase == SlotsGame::Phase::Betting)
       buildSlotsBetting(screen);
     else
@@ -1022,7 +1034,7 @@ void CasinoActivity::buildBetEntry(UiScreen& screen) {
 void CasinoActivity::buildRules(UiScreen& screen) {
   const auto& theme = screen.theme();
   const int16_t line = screen.target().lineHeight(theme.bodyText.font);
-  drawLabel(screen, screen.takeTop(line, theme.spaceMd),
+  drawLabel(screen, screen.takeTop(screen.target().lineHeight(theme.titleText.font), theme.spaceMd),
             rulesGame == Game::Farkle && rulesPage == 0  ? tr(STR_FARKLE_SCORING)
             : rulesGame == Game::Slots && rulesPage == 0 ? tr(STR_SLOTS_PAYTABLE)
                                                          : tr(STR_CASINO_RULES),

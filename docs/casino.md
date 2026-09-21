@@ -195,13 +195,13 @@ you commit. Use either:
 
 - **Score & roll** to add the selected points to the current turn, set those
   dice aside, and roll the remaining dice.
-- **Score & pass** to add the selection and bank the entire turn's points,
+- **Bank** to add the selection and bank the entire turn's points,
   then end the turn. There is no minimum opening score.
 
 A throw without any scoring dice is a bust: all unbanked points from that
 turn are lost, while points banked on earlier turns remain safe. If all six
-dice have scored, Score & roll rolls all six again and carries forward the
-turn's points. You may instead bank them with Score & pass. Combinations must
+dice have scored, **Roll all six** rolls all six again and carries forward the
+turn's points. You may instead bank them. Combinations must
 come from one throw; dice held from earlier throws cannot complete a later
 combination. Three pairs and full houses have no special bonus, although any
 ordinary scoring groups within them still count.
@@ -231,6 +231,15 @@ The engine uses the highest valid total for the chosen dice.
 during either player's turn, and on the result screen. It opens the complete
 combinations table; further pages explain the turn rules. Back returns to the
 same match without making a move or changing the tentative selection.
+
+Farkle uses a monochrome tavern-table design with carved perspective dice,
+serif display text, and separate score tracks for each player. The Bank button
+shows the entire amount it will secure. Hot dice, banked turns, busts, and
+match outcomes have distinct presentations; they never advance automatically.
+The scoring reference illustrates singles, triples, and straights with dice,
+with a compact text layout when the available height is limited. Drawing uses
+the existing fonts and fixed-size geometric primitives without new artwork
+buffers or animation tasks. Other Casino games retain their existing styling.
 
 The opponent's roll, selected dice, and intended action are visible. Press
 Continue to let it score and pass or score and roll; turn changes and opening

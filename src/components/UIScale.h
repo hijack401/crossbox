@@ -22,3 +22,12 @@ inline UIScaleSpec uiScaleSpec() {
   spec.titleFontId = UI_12_FONT_ID;
   return spec;
 }
+
+// Optional display accent for the Farkle table; controls retain the UI fonts.
+inline int uiGameDisplayFontId() {
+#ifdef OMIT_FONTS
+  return uiScaleSpec().titleFontId;
+#else
+  return NOTOSERIF_18_FONT_ID;
+#endif
+}
