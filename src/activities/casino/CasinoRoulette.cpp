@@ -205,6 +205,7 @@ void CasinoActivity::buildRouletteBetting(UiScreen& screen) {
   const auto& theme = screen.theme();
   const auto& state = store.roulette().state();
   const int16_t line = screen.target().lineHeight(theme.bodyText.font);
+  const int16_t smallLine = screen.target().lineHeight(theme.smallText.font);
   const int16_t row = theme.rowHeight;
   const auto spin = screen.takeBottom(row, theme.spaceMd);
   const auto actions = screen.takeBottom(row, theme.spaceMd);
@@ -215,20 +216,31 @@ void CasinoActivity::buildRouletteBetting(UiScreen& screen) {
              tr(STR_ROULETTE_CLEAR), R_CLEAR, false, state.betCount != 0);
   drawButton(screen, spin, tr(STR_ROULETTE_SPIN), R_SPIN, store.roulette().canSpin(store.game().state().balanceCents),
              store.roulette().canSpin(store.game().state().balanceCents));
-  char amount[48];
-  char label[80];
-  ui_casino::money(amount, sizeof(amount), state.wagerCents);
-  snprintf(label, sizeof(label), tr(STR_ROULETTE_TOTAL), amount);
-  drawLabel(screen, screen.takeTop(line, theme.spaceLg), label, true);
-  if (state.wagerCents > store.game().state().balanceCents)
-    drawLabel(screen, screen.takeTop(line * 2, theme.spaceSm), tr(STR_ROULETTE_REDUCE));
+  ui_roulette::caption(screen.target(), screen.takeTop(smallLine, theme.spaceMd), theme,
+                       tr(STR_ROULETTE_TABLE_EDITION));
   if (!state.betCount) {
-    const auto hint = screen.takeBottom(line * 2, theme.spaceMd);
-    drawLabel(screen, hint, remainingFunds(store) >= 100 ? tr(STR_ROULETTE_EMPTY) : tr(STR_CASINO_NO_FUNDS), false,
+    drawLabel(screen, screen.takeBottom(line * 2, theme.spaceMd),
+              remainingFunds(store) >= 100 ? tr(STR_ROULETTE_PLACE_HINT) : tr(STR_CASINO_NO_FUNDS), false,
               fui::TextAlign::Center);
     ui_roulette::wheel(screen.target(), screen.contentRect(), theme);
     return;
   }
+  char amount[48];
+  char label[80];
+  const bool compact = screen.contentRect().height < row * 5;
+  const auto summary = screen.takeTop(compact ? line * 2 + theme.spaceMd : row * 2 + theme.spaceMd, theme.spaceMd);
+  const int16_t wheelSide = compact ? 0 : std::min<int16_t>(summary.height, summary.width / 3);
+  if (wheelSide) ui_roulette::wheel(screen.target(), fui::Rect{summary.x, summary.y, wheelSide, summary.height}, theme);
+  const int16_t textX = summary.x + wheelSide + (wheelSide ? theme.spaceMd : 0);
+  const int16_t textWidth = summary.right() - textX;
+  screen.target().text(fui::Rect{textX, summary.y, textWidth, smallLine}, tr(STR_ROULETTE_BETTING_SLIP),
+                       theme.smallText);
+  ui_casino::balance(screen.target(),
+                     fui::Rect{textX, static_cast<int16_t>(summary.y + smallLine + theme.spaceSm), textWidth,
+                               static_cast<int16_t>(summary.height - smallLine - theme.spaceSm)},
+                     theme, state.wagerCents);
+  if (state.wagerCents > store.game().state().balanceCents)
+    drawLabel(screen, screen.takeTop(line * 2, theme.spaceSm), tr(STR_ROULETTE_REDUCE));
   const auto pagination = screen.takeBottom(theme.minTouchSize, theme.spaceSm);
   const auto area = screen.contentRect();
   rouletteListPerPage = std::clamp<int>(area.height / (row + theme.spaceSm), 1, 5);
@@ -244,19 +256,23 @@ void CasinoActivity::buildRouletteBetting(UiScreen& screen) {
     const auto rect = screen.takeTop(row, theme.spaceSm);
     drawButton(screen, rect, nullptr, R_REMOVE_BASE + i);
     const auto resolved = screen.frame().stateFor(ACTION_CONTROL, R_REMOVE_BASE + i, buttonProps.state);
-    auto text = fui::textStyleWithForeground(theme.bodyText, buttonProps.styles.resolve(resolved).foreground);
+    const auto foreground = buttonProps.styles.resolve(resolved).foreground;
+    auto text = fui::textStyleWithForeground(theme.bodyText, foreground);
     const int16_t inset = theme.spaceMd;
     const int16_t cross = theme.minTouchSize;
+    const int16_t token = std::min<int16_t>(line, rect.width / 12);
+    ui_roulette::chip(screen.target(), fui::Rect{static_cast<int16_t>(rect.x + inset), rect.y, token, rect.height},
+                      foreground);
+    const int16_t labelX = rect.x + inset * 2 + token;
+    const int16_t labelWidth = rect.width * 3 / 5 - inset * 2 - token;
     betLabel(label, sizeof(label), entry.bet);
     text.bold = true;
-    screen.target().text(fui::Rect{static_cast<int16_t>(rect.x + inset), rect.y,
-                                   static_cast<int16_t>((rect.width - cross) / 2), rect.height},
-                         label, text);
+    screen.target().text(fui::Rect{labelX, rect.y, labelWidth, rect.height}, label, text);
     ui_casino::money(amount, sizeof(amount), entry.amountCents);
     text.bold = false;
     text.align = fui::TextAlign::Right;
-    screen.target().text(fui::Rect{static_cast<int16_t>(rect.x + rect.width / 2), rect.y,
-                                   static_cast<int16_t>(rect.width / 2 - cross), rect.height},
+    screen.target().text(fui::Rect{static_cast<int16_t>(rect.x + rect.width * 3 / 5), rect.y,
+                                   static_cast<int16_t>(rect.width * 2 / 5 - cross), rect.height},
                          amount, text);
     text.align = fui::TextAlign::Center;
     screen.target().text(fui::Rect{static_cast<int16_t>(rect.right() - cross), rect.y, cross, rect.height},
@@ -337,10 +353,19 @@ void CasinoActivity::buildRoulettePicker(UiScreen& screen) {
       snprintf(label, sizeof(label), tr(STR_CASINO_TOTAL), bet.first);
     else
       betLabel(label, sizeof(label), bet);
-    drawButton(screen,
-               fui::Rect{static_cast<int16_t>(area.x + (i % columns) * (width + theme.spaceSm)),
-                         static_cast<int16_t>(area.y + (i / columns) * (height + theme.spaceSm)), width, height},
-               label, R_CHOICE_BASE + i + (numbers ? 1 : 0));
+    const fui::Rect pocket{static_cast<int16_t>(area.x + (i % columns) * (width + theme.spaceSm)),
+                           static_cast<int16_t>(area.y + (i / columns) * (height + theme.spaceSm)), width, height};
+    drawButton(screen, pocket, label, R_CHOICE_BASE + i + (numbers ? 1 : 0));
+    if (numbers) {
+      const auto ink = fui::Paint::solid(theme.bodyText.color);
+      const auto red =
+          fui::Paint::dither(theme.bodyText.color == fui::Color::White ? fui::Color::DarkGray : fui::Color::LightGray);
+      screen.target().fill(
+          fui::Rect{static_cast<int16_t>(pocket.x + theme.spaceSm), static_cast<int16_t>(pocket.y + theme.spaceSm),
+                    static_cast<int16_t>(std::max<int16_t>(2, theme.spaceSm)),
+                    static_cast<int16_t>(pocket.height - theme.spaceSm * 2)},
+          RouletteGame::isRed(bet.first) ? red : ink);
+    }
   }
   if (roulettePages > 1)
     drawRoulettePaging(screen, footer, roulettePage, roulettePages);
@@ -351,22 +376,43 @@ void CasinoActivity::buildRoulettePicker(UiScreen& screen) {
 void CasinoActivity::buildRouletteStake(UiScreen& screen) {
   const auto& theme = screen.theme();
   const int16_t line = screen.target().lineHeight(theme.bodyText.font);
+  const int16_t titleLine = screen.target().lineHeight(theme.titleText.font);
   const auto add = screen.takeBottom(theme.rowHeight, theme.spaceMd);
   const auto custom = screen.takeBottom(theme.rowHeight, theme.spaceMd);
   const auto presets = screen.takeBottom(theme.rowHeight, theme.spaceLg);
   char label[80];
   char amount[48];
+  ui_roulette::caption(screen.target(), screen.takeTop(line, theme.spaceMd), theme, tr(STR_ROULETTE_BETTING_SLIP));
+  const auto position = screen.takeTop(titleLine + line + theme.spaceLg * 2, theme.spaceLg);
+  ui_roulette::frame(screen.target(), position, theme);
   betLabel(label, sizeof(label), rouletteBet);
-  drawLabel(screen, screen.takeTop(line, theme.spaceMd), label, true, fui::TextAlign::Center);
+  drawLabel(screen, fui::Rect{position.x, static_cast<int16_t>(position.y + theme.spaceMd), position.width, titleLine},
+            label, true, fui::TextAlign::Center);
   snprintf(label, sizeof(label), tr(STR_ROULETTE_PAYS), RouletteGame::profitOdds(rouletteBet));
-  drawLabel(screen, screen.takeTop(line, theme.spaceLg), label, false, fui::TextAlign::Center);
+  drawLabel(screen,
+            fui::Rect{position.x, static_cast<int16_t>(position.bottom() - line - theme.spaceMd), position.width, line},
+            label, false, fui::TextAlign::Center);
   ui_casino::money(amount, sizeof(amount), remainingFunds(store));
   snprintf(label, sizeof(label), tr(STR_ROULETTE_AVAILABLE), amount);
   drawLabel(screen, screen.takeBottom(line, theme.spaceMd), label, false, fui::TextAlign::Center);
   if (store.roulette().state().betCount == RouletteGame::MAX_BETS && !canPlaceBet(100))
     drawLabel(screen, screen.contentRect(), tr(STR_ROULETTE_LIMIT), false, fui::TextAlign::Center);
-  else
-    ui_casino::amount(screen.target(), screen.contentRect(), theme, betCents);
+  else {
+    const auto area = screen.contentRect();
+    const int16_t height = std::min<int16_t>(area.height, line + balance_font::HEIGHT + theme.spaceMd * 2);
+    const int16_t top = area.y + (area.height - height) / 2;
+    drawLabel(screen, fui::Rect{area.x, top, area.width, line}, tr(STR_CASINO_BET));
+    const int16_t token = std::min<int16_t>(theme.rowHeight, area.width / 5);
+    const int16_t moneyTop = top + line + theme.spaceMd;
+    const int16_t moneyHeight = std::max<int16_t>(0, height - line - theme.spaceMd);
+    ui_casino::balance(
+        screen.target(),
+        fui::Rect{area.x, moneyTop, static_cast<int16_t>(area.width - token - theme.spaceLg), moneyHeight}, theme,
+        betCents);
+    ui_roulette::chip(screen.target(),
+                      fui::Rect{static_cast<int16_t>(area.right() - token), moneyTop, token, moneyHeight},
+                      fui::Paint::solid(theme.bodyText.color));
+  }
   const int16_t width = (presets.width - theme.spaceSm * 3) / 4;
   for (int i = 0; i < 4; ++i) {
     ui_casino::money(amount, sizeof(amount), PRESETS[i]);
@@ -388,6 +434,8 @@ void CasinoActivity::buildRouletteRound(UiScreen& screen) {
   const auto& state = store.roulette().state();
   const bool complete = state.phase == Phase::Settled;
   const int16_t line = screen.target().lineHeight(theme.bodyText.font);
+  const int16_t titleLine = screen.target().lineHeight(theme.titleText.font);
+  const int16_t smallLine = screen.target().lineHeight(theme.smallText.font);
   const auto actions = screen.takeBottom(theme.rowHeight, theme.spaceMd);
   if (complete) {
     const int16_t half = (actions.width - theme.spaceMd) / 2;
@@ -397,28 +445,47 @@ void CasinoActivity::buildRouletteRound(UiScreen& screen) {
                state.wagerCents <= store.game().state().balanceCents);
   } else
     drawButton(screen, actions, tr(STR_ROULETTE_REVEAL), R_REVEAL, true);
-  const auto result = screen.takeBottom(line * 3 + theme.spaceLg, theme.spaceMd);
+  const auto result = screen.takeBottom(titleLine + line + smallLine + theme.spaceMd * 4, theme.spaceMd);
+  ui_roulette::frame(screen.target(), result, theme);
+  ui_roulette::caption(screen.target(), screen.takeTop(smallLine, theme.spaceSm), theme,
+                       complete ? tr(STR_ROULETTE_WINNING_POCKET) : tr(STR_ROULETTE_BALL_IN_PLAY));
   char amount[48];
   char label[80];
   ui_casino::money(amount, sizeof(amount), state.wagerCents);
   snprintf(label, sizeof(label), tr(STR_ROULETTE_TOTAL), amount);
-  drawLabel(screen, screen.takeTop(line, theme.spaceMd), label, false, fui::TextAlign::Center);
-  ui_roulette::wheel(screen.target(), screen.contentRect(), theme, complete, state.result);
+  drawLabel(screen, screen.takeBottom(line, theme.spaceSm), label, false, fui::TextAlign::Center);
+  ui_roulette::wheel(screen.target(), screen.contentRect(), theme, complete, state.result, !complete);
   if (complete) {
     const int64_t net = state.returnCents - state.wagerCents;
-    ui_casino::money(amount, sizeof(amount), net < 0 ? -net : net);
-    snprintf(label, sizeof(label), net < 0 ? tr(STR_CASINO_MINUS) : tr(STR_CASINO_PLUS), amount);
-    drawLabel(screen, fui::Rect{result.x, result.y, result.width, line},
+    drawLabel(screen,
+              fui::Rect{static_cast<int16_t>(result.x + theme.spaceMd), static_cast<int16_t>(result.y + theme.spaceMd),
+                        static_cast<int16_t>(result.width - theme.spaceMd * 2), titleLine},
               net > 0    ? tr(STR_CASINO_WIN)
               : net == 0 ? tr(STR_ROULETTE_EVEN_RESULT)
                          : tr(STR_BACCARAT_LOSE),
               true, fui::TextAlign::Center);
-    drawLabel(screen, fui::Rect{result.x, static_cast<int16_t>(result.y + line + theme.spaceSm), result.width, line},
-              label, true, fui::TextAlign::Center);
+    ui_casino::money(amount, sizeof(amount), net < 0 ? -net : net);
+    snprintf(label, sizeof(label), net < 0 ? tr(STR_CASINO_MINUS) : tr(STR_CASINO_PLUS), amount);
+    auto text = theme.bodyText;
+    text.bold = true;
+    text.align = fui::TextAlign::Center;
+    screen.target().text(fui::Rect{result.x, static_cast<int16_t>(result.y + theme.spaceMd + titleLine + theme.spaceSm),
+                                   result.width, line},
+                         label, text);
     ui_casino::money(amount, sizeof(amount), state.returnCents);
     snprintf(label, sizeof(label), tr(STR_ROULETTE_RETURN), amount);
-    drawLabel(screen, fui::Rect{result.x, static_cast<int16_t>(result.bottom() - line), result.width, line}, label,
-              false, fui::TextAlign::Center);
-  } else
-    drawLabel(screen, result, tr(STR_ROULETTE_CLOSED), true, fui::TextAlign::Center);
+    text = theme.smallText;
+    text.align = fui::TextAlign::Center;
+    screen.target().text(
+        fui::Rect{result.x, static_cast<int16_t>(result.bottom() - smallLine - theme.spaceMd), result.width, smallLine},
+        label, text);
+  } else {
+    drawLabel(screen, fui::Rect{result.x, static_cast<int16_t>(result.y + theme.spaceMd), result.width, titleLine},
+              tr(STR_ROULETTE_CLOSED), true, fui::TextAlign::Center);
+    drawLabel(screen,
+              fui::Rect{static_cast<int16_t>(result.x + theme.spaceMd * 2),
+                        static_cast<int16_t>(result.y + theme.spaceMd + titleLine),
+                        static_cast<int16_t>(result.width - theme.spaceMd * 4), static_cast<int16_t>(line * 2)},
+              tr(STR_ROULETTE_LOCKED_HINT), false, fui::TextAlign::Center);
+  }
 }

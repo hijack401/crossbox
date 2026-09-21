@@ -23,7 +23,7 @@ inline UIScaleSpec uiScaleSpec() {
   return spec;
 }
 
-// Optional display accent for the Farkle table; controls retain the UI fonts.
+// Optional display accent for casino tables; controls retain the UI fonts.
 inline int uiGameDisplayFontId() {
 #ifdef OMIT_FONTS
   return uiScaleSpec().titleFontId;

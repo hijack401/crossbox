@@ -12,6 +12,7 @@
 #include "components/UIScale.h"
 #include "components/UITheme.h"
 #include "components/UiCasino.h"
+#include "components/UiCasinoTable.h"
 #include "components/UiFarkle.h"
 #include "util/CasinoDate.h"
 
@@ -491,18 +492,17 @@ void CasinoActivity::drawButton(UiScreen& screen, fui::Rect rect, const char* la
     props.styles.normal.border = ink;
     props.styles.normal.borderWidth = 1;
   }
-  const bool farkleControl =
-      (view == View::Table && tableGame == Game::Farkle) || (view == View::Rules && rulesGame == Game::Farkle);
-  if (farkleControl && outlined) {
+  const bool tableControl = view == View::Table || (view == View::Rules && rulesGame == Game::Farkle);
+  if (tableControl && outlined) {
     props.styles.disabled.border = ink;
     props.styles.disabled.borderWidth = 1;
   }
-  props.styles.focused = primary && farkleControl ? props.styles.selected : props.styles.normal;
+  props.styles.focused = primary && tableControl ? props.styles.selected : props.styles.normal;
   props.styles.focused.border = ink;
   props.styles.focused.borderWidth = control == RULES ? 0 : 3;
   if (buttonNavigation && selectedControl == control) props.state = fui::StateFocused;
   fui::button(screen.frame(), rect, props);
-  if (farkleControl && primary && enabled && buttonNavigation && selectedControl == control)
+  if (tableControl && primary && enabled && buttonNavigation && selectedControl == control)
     screen.target().stroke(rect.inset(fui::makeInsets(screen.theme().spaceSm)),
                            fui::Paint::solid(fui::invertedColor(screen.theme().bodyText.color)), 1);
   if (control == RULES) {
@@ -535,10 +535,8 @@ void CasinoActivity::drawButton(UiScreen& screen, fui::Rect rect, const char* la
 
 void CasinoActivity::buildScreen(UiScreen& screen) {
   focusCount = 0;
-  const bool farkleDisplay =
-      (view == View::Table && tableGame == Game::Farkle) || (view == View::Rules && rulesGame == Game::Farkle);
-  uiTarget.setFont(fui::GfxRendererTarget::FONT_TITLE,
-                   farkleDisplay ? uiGameDisplayFontId() : uiScaleSpec().titleFontId);
+  const bool gameDisplay = view == View::Table || (view == View::Rules && rulesGame == Game::Farkle);
+  uiTarget.setFont(fui::GfxRendererTarget::FONT_TITLE, gameDisplay ? uiGameDisplayFontId() : uiScaleSpec().titleFontId);
   const auto& theme = screen.theme();
   const Rect safe = UITheme::getInstance().getScreenSafeArea(renderer, true, false);
   screen.setContentMarginFromScreen(fui::Insets{
@@ -646,33 +644,24 @@ void CasinoActivity::buildTable(UiScreen& screen) {
     return;
   }
   const auto& theme = screen.theme();
-  const bool compact = screen.contentRect().height < theme.rowHeight * 7;
   const int16_t smallLine = screen.target().lineHeight(theme.smallText.font);
-  const int16_t bodyLine = screen.target().lineHeight(theme.titleText.font);
-  const auto header = screen.takeTop(
-      compact ? theme.minTouchSize : std::max<int16_t>(theme.rowHeight, smallLine + bodyLine + theme.spaceSm),
-      theme.spaceMd);
+  const int16_t titleLine = screen.target().lineHeight(theme.titleText.font);
+  const auto header = screen.takeTop(titleLine + smallLine + theme.spaceSm, theme.spaceSm);
+  const char* name = tableGame == Game::Slots      ? tr(STR_CASINO_SLOTS)
+                     : tableGame == Game::Roulette ? tr(STR_CASINO_ROULETTE)
+                     : tableGame == Game::Baccarat ? tr(STR_CASINO_BACCARAT)
+                                                   : tr(STR_CASINO_BLACKJACK);
+  const int16_t rulesWidth = header.width / 3;
+  drawLabel(screen, fui::makeRect(header.x, header.y, header.width - rulesWidth, titleLine), name, true);
+  drawButton(screen, fui::makeRect(header.right() - rulesWidth, header.y, rulesWidth, titleLine),
+             tableGame == Game::Slots ? tr(STR_SLOTS_PAYTABLE) : tr(STR_CASINO_RULES), RULES, false, true, false);
   char money[48];
+  char balance[80];
   ui_casino::money(money, sizeof(money), store.game().state().balanceCents);
-  const int16_t balanceWidth = header.width * 2 / 3;
-  if (compact) {
-    char label[80];
-    snprintf(label, sizeof(label), tr(STR_CASINO_BALANCE_AMOUNT), money);
-    drawLabel(screen, fui::Rect{header.x, header.y, balanceWidth, header.height}, label, true);
-  } else {
-    const int16_t top = header.y + (header.height - smallLine - bodyLine - theme.spaceSm) / 2;
-    screen.target().text(fui::Rect{header.x, top, balanceWidth, smallLine}, tr(STR_CASINO_BALANCE), theme.smallText);
-    drawLabel(screen,
-              fui::Rect{header.x, static_cast<int16_t>(top + smallLine + theme.spaceSm), balanceWidth, bodyLine}, money,
-              true);
-  }
-  drawButton(screen,
-             fui::Rect{static_cast<int16_t>(header.right() - header.width / 3), header.y,
-                       static_cast<int16_t>(header.width / 3), header.height},
-             tr(STR_CASINO_RULES), RULES, false, true, false);
-  screen.target().line(fui::Point{header.x, static_cast<int16_t>(header.bottom() + theme.spaceSm)},
-                       fui::Point{header.right(), static_cast<int16_t>(header.bottom() + theme.spaceSm)}, 1,
-                       fui::Paint::solid(theme.bodyText.color));
+  snprintf(balance, sizeof(balance), tr(STR_CASINO_BALANCE_AMOUNT), money);
+  screen.target().text(fui::makeRect(header.x, header.y + titleLine + theme.spaceSm, header.width, smallLine), balance,
+                       theme.smallText);
+  ui_casino_table::ornament(screen.target(), screen.takeTop(theme.spaceLg, theme.spaceMd), theme);
   if (tableGame == Game::Slots) {
     if (store.slots().state().phase == SlotsGame::Phase::Betting)
       buildSlotsBetting(screen);
@@ -705,30 +694,39 @@ void CasinoActivity::buildBetting(UiScreen& screen) {
   if (store.game().state().balanceCents < 100) {
     drawLabel(screen, screen.contentRect(), tr(STR_CASINO_NO_FUNDS), false, fui::TextAlign::Center);
   } else {
-    const auto area = screen.contentRect();
-    const bool decorated = area.height >= line * 8;
-    const int16_t motifHeight = decorated ? line : 0;
-    const int16_t gap = decorated ? theme.spaceLg : 0;
-    const int16_t amountHeight = std::min<int16_t>(theme.rowHeight * 2, area.height - line - motifHeight - gap * 2);
-    const int16_t groupHeight = line + amountHeight + motifHeight + gap * 2;
-    screen.spacer(std::max<int16_t>(0, (area.height - groupHeight) / 2));
-    if (decorated) {
-      const auto motif = screen.takeTop(motifHeight, gap);
-      const int16_t side = theme.spaceLg;
-      const int16_t step = side + theme.spaceLg;
-      const int16_t start = motif.x + (motif.width - step * 3 - side) / 2;
-      static constexpr uint8_t SUITS[] = {3, 2, 1, 0};
-      for (int i = 0; i < 4; ++i)
-        ui_casino::suit(screen.target(), fui::Rect{static_cast<int16_t>(start + step * i), motif.y, side, side}, theme,
-                        SUITS[i]);
-      const int16_t y = motif.y + side / 2;
-      const auto ink = fui::Paint::solid(theme.bodyText.color);
-      screen.target().line(fui::Point{motif.x, y}, fui::Point{static_cast<int16_t>(start - theme.spaceLg), y}, 1, ink);
-      screen.target().line(fui::Point{static_cast<int16_t>(start + step * 3 + side + theme.spaceLg), y},
-                           fui::Point{motif.right(), y}, 1, ink);
+    auto area = screen.contentRect();
+    const int16_t titleLine = screen.target().lineHeight(theme.titleText.font);
+    ui_casino_table::frame(screen.target(), area, theme);
+    area = area.inset(fui::makeInsets(theme.spaceLg));
+    const int16_t footerHeight = line + titleLine + theme.spaceSm;
+    const int16_t artHeight = std::max<int16_t>(0, area.height - footerHeight - theme.spaceMd);
+    if (artHeight >= line * 2) {
+      const int16_t cardHeight = std::min<int16_t>(theme.rowHeight * 3, artHeight - theme.spaceSm);
+      const int16_t cardWidth = cardHeight * 2 / 3;
+      const int16_t cx = area.x + area.width / 2;
+      const int16_t top = area.y + (artHeight - cardHeight) / 2;
+      const bool baccarat = tableGame == Game::Baccarat;
+      ui_casino_table::card(screen.target(), fui::makeRect(cx - cardWidth / 3, top, cardWidth, cardHeight), theme,
+                            baccarat ? 2 : 13, baccarat ? 0 : 2);
+      ui_casino_table::card(screen.target(),
+                            fui::makeRect(cx - cardWidth * 3 / 4, top + theme.spaceSm, cardWidth, cardHeight), theme,
+                            baccarat ? 7 : 1, baccarat ? 1 : 3);
+      const int16_t chipSide = std::min<int16_t>(theme.minTouchSize, cardWidth / 2);
+      if (area.width >= cardWidth * 3)
+        ui_casino_table::chip(screen.target(),
+                              fui::makeRect(cx + cardWidth * 3 / 4, top + cardHeight - chipSide, chipSide, chipSide),
+                              theme, true);
     }
-    drawLabel(screen, screen.takeTop(line, gap), tr(STR_CASINO_BET), false, fui::TextAlign::Center);
-    ui_casino::amount(screen.target(), screen.takeTop(amountHeight), theme, betCents);
+    const auto caption = fui::makeRect(area.x, area.bottom() - footerHeight, area.width, line);
+    drawLabel(screen, caption, tr(STR_CASINO_BET), false, fui::TextAlign::Center);
+    char amount[48];
+    ui_casino::money(amount, sizeof(amount), betCents);
+    auto number = theme.titleText;
+    number.bold = true;
+    number.align = fui::TextAlign::Center;
+    if (screen.target().measureText(number.font, amount, number).width > area.width) number.font = theme.bodyText.font;
+    screen.target().text(fui::makeRect(area.x, caption.bottom() + theme.spaceSm, area.width, titleLine), amount,
+                         number);
   }
   const int16_t cell = (presets.width - theme.spaceSm * 3) / 4;
   for (int i = 0; i < 4; ++i) {
@@ -776,41 +774,52 @@ void CasinoActivity::drawBaccaratHand(UiScreen& screen, fui::Rect area, const Ba
   const int16_t line = screen.target().lineHeight(theme.bodyText.font);
   const bool complete = state.phase == BaccaratGame::Phase::Settled;
   const bool winner = complete && state.winner == (banker ? BaccaratGame::Bet::Banker : BaccaratGame::Bet::Player);
-  const int16_t band = line + theme.spaceMd * 2;
-  const auto ink = fui::Paint::solid(theme.bodyText.color);
+  ui_casino_table::frame(screen.target(), area, theme);
+  area = area.inset(fui::makeInsets(theme.spaceMd));
+  const int16_t band = line + theme.spaceSm;
   auto text = theme.bodyText;
   text.bold = true;
+  const auto heading = fui::makeRect(area.x, area.y, area.width, band);
   if (winner) {
-    screen.target().fill(fui::Rect{area.x, area.y, area.width, band}, ink);
+    screen.target().fill(heading, fui::Paint::solid(text.color));
     text.color = fui::invertedColor(text.color);
-  } else {
-    screen.target().stroke(fui::Rect{area.x, area.y, area.width, band}, ink, 1);
   }
-  screen.target().text(
-      fui::Rect{static_cast<int16_t>(area.x + theme.spaceMd), area.y, static_cast<int16_t>(area.width / 2), band},
-      banker ? tr(STR_BACCARAT_BANKER) : tr(STR_BACCARAT_PLAYER), text);
-  if (complete) {
-    char total[8];
-    snprintf(total, sizeof(total), tr(STR_CASINO_TOTAL), BaccaratGame::value(hand));
-    text.align = fui::TextAlign::Right;
-    screen.target().text(fui::Rect{static_cast<int16_t>(area.x + area.width / 2), area.y,
-                                   static_cast<int16_t>(area.width / 2 - theme.spaceMd), band},
-                         total, text);
+  screen.target().text(fui::makeRect(heading.x + theme.spaceSm, heading.y, heading.width * 2 / 3, band),
+                       banker ? tr(STR_BACCARAT_BANKER) : tr(STR_BACCARAT_PLAYER), text);
+  unsigned visibleTotal = 0;
+  uint8_t visible = 0;
+  for (uint8_t i = 0; i < hand.cardCount; ++i) {
+    if (!store.baccarat().cardRevealed(banker, i)) continue;
+    const uint8_t rank = BlackjackGame::rank(hand.cards[i]);
+    visibleTotal += rank >= 10 ? 0 : rank;
+    ++visible;
   }
-  area.y += band + theme.spaceMd;
-  area.height -= band + theme.spaceMd;
-  if (area.empty()) return;
-  const int16_t cardWidth = std::min<int16_t>((area.width - theme.spaceMd * 2) / 3, area.height * 2 / 3);
-  const int16_t cardHeight = std::min<int16_t>(theme.rowHeight * 2, cardWidth * 3 / 2);
-  // Extra cards arrive only once the earlier cards have been turned over.
   const uint8_t thirdCardTurn = banker ? 2 + state.player.cardCount : 4;
+  char total[16];
+  if (complete || (visible == hand.cardCount && state.revealedCards >= thirdCardTurn))
+    snprintf(total, sizeof(total), tr(STR_CASINO_TOTAL), BaccaratGame::value(hand));
+  else if (visible)
+    snprintf(total, sizeof(total), tr(STR_CASINO_UNKNOWN_TOTAL), visibleTotal % 10);
+  else
+    snprintf(total, sizeof(total), "%s", tr(STR_CASINO_CARD_HIDDEN));
+  text.align = fui::TextAlign::Right;
+  screen.target().text(fui::makeRect(heading.x + heading.width / 2, heading.y, heading.width / 2 - theme.spaceSm, band),
+                       total, text);
+  area.y += band + theme.spaceSm;
+  area.height -= band + theme.spaceSm;
+  if (area.empty()) return;
+  // Extra cards arrive only once the earlier cards have been turned over.
   const uint8_t cards = !complete && state.revealedCards < thirdCardTurn ? 2 : hand.cardCount;
+  const int16_t cardWidth = std::min<int16_t>((area.width - theme.spaceMd * (cards - 1)) / cards,
+                                              std::min<int16_t>(theme.rowHeight * 2, area.height * 2 / 3));
+  const int16_t cardHeight = cardWidth * 3 / 2;
   const int16_t start = area.x + (area.width - (cardWidth * cards + theme.spaceMd * (cards - 1))) / 2;
   for (uint8_t i = 0; i < cards; ++i)
-    ui_casino::card(screen.target(),
-                    fui::Rect{static_cast<int16_t>(start + i * (cardWidth + theme.spaceMd)),
-                              static_cast<int16_t>(area.y + (area.height - cardHeight) / 2), cardWidth, cardHeight},
-                    theme, hand.cards[i], !store.baccarat().cardRevealed(banker, i));
+    ui_casino_table::card(screen.target(),
+                          fui::makeRect(start + i * (cardWidth + theme.spaceMd),
+                                        area.y + (area.height - cardHeight) / 2, cardWidth, cardHeight),
+                          theme, BlackjackGame::rank(hand.cards[i]), BlackjackGame::suit(hand.cards[i]),
+                          !store.baccarat().cardRevealed(banker, i));
 }
 
 void CasinoActivity::buildBaccaratRound(UiScreen& screen) {
@@ -821,23 +830,34 @@ void CasinoActivity::buildBaccaratRound(UiScreen& screen) {
   const bool complete = state.phase == BaccaratGame::Phase::Settled;
   drawButton(screen, screen.takeBottom(compact ? theme.minTouchSize : theme.rowHeight, theme.spaceMd),
              complete ? tr(STR_CASINO_AGAIN) : tr(STR_BACCARAT_REVEAL_CARD), complete ? AGAIN : REVEAL_CARD, true);
-  const auto result = screen.takeBottom(line * 2 + theme.spaceMd, theme.spaceLg);
+  const int16_t titleLine = screen.target().lineHeight(theme.titleText.font);
+  const auto result = screen.takeBottom(complete ? titleLine + line + theme.spaceMd * 2 : line, theme.spaceMd);
   char amount[48];
   char label[80];
   if (complete) {
-    drawLabel(screen, fui::Rect{result.x, result.y, result.width, line},
-              state.winner == BaccaratGame::Bet::Player   ? tr(STR_BACCARAT_PLAYER_WINS)
-              : state.winner == BaccaratGame::Bet::Banker ? tr(STR_BACCARAT_BANKER_WINS)
-                                                          : tr(STR_BACCARAT_TIE),
-              true, fui::TextAlign::Center);
+    ui_casino_table::frame(screen.target(), result, theme);
+    drawLabel(
+        screen,
+        fui::makeRect(result.x + theme.spaceMd, result.y + theme.spaceSm, result.width - theme.spaceMd * 2, titleLine),
+        state.winner == BaccaratGame::Bet::Player   ? tr(STR_BACCARAT_PLAYER_WINS)
+        : state.winner == BaccaratGame::Bet::Banker ? tr(STR_BACCARAT_BANKER_WINS)
+                                                    : tr(STR_BACCARAT_TIE),
+        true, fui::TextAlign::Center);
     netMoney(amount, sizeof(amount), state.returnCents - state.wagerCents);
     snprintf(label, sizeof(label), tr(STR_BACCARAT_RETURN),
              state.returnCents > state.wagerCents    ? tr(STR_CASINO_WIN)
              : state.returnCents == state.wagerCents ? tr(STR_CASINO_PUSH)
                                                      : tr(STR_BACCARAT_LOSE),
              amount);
-    drawLabel(screen, fui::Rect{result.x, static_cast<int16_t>(result.y + line + theme.spaceSm), result.width, line},
+    drawLabel(screen,
+              fui::makeRect(result.x + theme.spaceMd, result.y + titleLine + theme.spaceSm,
+                            result.width - theme.spaceMd * 2, line),
               label, false, fui::TextAlign::Center);
+  } else {
+    snprintf(label, sizeof(label), tr(STR_BACCARAT_REVEAL_PROGRESS), static_cast<unsigned>(state.revealedCards));
+    auto progress = theme.smallText;
+    progress.align = fui::TextAlign::Center;
+    screen.target().text(result, label, progress);
   }
   ui_casino::money(amount, sizeof(amount), state.wagerCents);
   snprintf(label, sizeof(label), tr(STR_BACCARAT_WAGER), baccaratBetLabel(state.bet), amount);
@@ -860,31 +880,54 @@ void CasinoActivity::drawHand(UiScreen& screen, fui::Rect area, const BlackjackG
   const auto& theme = screen.theme();
   const bool hidden = dealer && store.game().state().phase != Phase::Settled;
   const int16_t line = screen.target().lineHeight(theme.bodyText.font);
+  ui_casino_table::frame(screen.target(), area, theme);
+  area = area.inset(fui::makeInsets(theme.spaceMd));
+  const int16_t band = line + theme.spaceSm;
+  auto label = theme.bodyText;
+  label.bold = true;
+  screen.target().text(fui::makeRect(area.x + theme.spaceSm, area.y, area.width / 2, band),
+                       dealer ? tr(STR_CASINO_DEALER) : tr(STR_CASINO_YOU), label);
   char total[32];
   if (hidden)
     snprintf(total, sizeof(total), tr(STR_CASINO_UNKNOWN_TOTAL), BlackjackGame::cardValue(hand.cards[0]));
   else
     snprintf(total, sizeof(total), BlackjackGame::isSoft(hand) ? tr(STR_CASINO_SOFT_TOTAL) : tr(STR_CASINO_TOTAL),
              BlackjackGame::value(hand));
-  drawLabel(screen, fui::Rect{area.x, area.y, static_cast<int16_t>(area.width / 2), line},
-            dealer ? tr(STR_CASINO_DEALER) : tr(STR_CASINO_YOU));
-  drawLabel(
-      screen,
-      fui::Rect{static_cast<int16_t>(area.x + area.width / 2), area.y, static_cast<int16_t>(area.width / 2), line},
-      total, true, fui::TextAlign::Right);
-  area.y += line + theme.spaceSm;
-  area.height -= line + theme.spaceSm;
+  const int16_t scoreWidth = std::min<int16_t>(
+      area.width / 2, screen.target().measureText(label.font, total, label).width + theme.spaceMd * 2);
+  const auto score = fui::makeRect(area.right() - scoreWidth, area.y, scoreWidth, band);
+  if (!dealer) {
+    screen.target().fill(score, fui::Paint::solid(label.color));
+    label.color = fui::invertedColor(label.color);
+  }
+  label.align = fui::TextAlign::Center;
+  screen.target().text(score, total, label);
+  area.y += band + theme.spaceSm;
+  area.height -= band + theme.spaceSm;
   if (area.empty() || hand.cardCount == 0) return;
-  const int columns = std::min<int>(hand.cardCount, std::max<int>(2, area.width / (line + theme.spaceMd)));
+  auto indexStyle = theme.smallText;
+  indexStyle.bold = true;
+  const int16_t exposed = screen.target().measureText(indexStyle.font, "10", indexStyle).width + theme.spaceMd * 2;
+  const int16_t fullHeight = std::min<int16_t>(theme.rowHeight * 3, area.height);
+  const int16_t fullWidth = std::min<int16_t>(area.width, fullHeight * 2 / 3);
+  const int16_t step = hand.cardCount == 1 ? fullWidth
+                                           : std::min<int16_t>(fullWidth + theme.spaceSm,
+                                                               (area.width - fullWidth) / (hand.cardCount - 1));
+  const bool fan =
+      fullHeight >= screen.target().lineHeight(indexStyle.font) * 3 && (hand.cardCount == 1 || step >= exposed);
+  const int16_t compactWidth = exposed + screen.target().lineHeight(indexStyle.font) / 2;
+  const int columns = fan ? hand.cardCount : std::min<int>(hand.cardCount, std::max<int>(2, area.width / compactWidth));
   const int rows = (hand.cardCount + columns - 1) / columns;
-  const int16_t height = std::min<int16_t>(theme.rowHeight * 2, (area.height - theme.spaceSm * (rows - 1)) / rows);
-  const int16_t width = std::min<int16_t>((area.width - theme.spaceSm * (columns - 1)) / columns,
-                                          std::max<int16_t>(line + theme.spaceSm, height * 2 / 3));
+  const int16_t height = fan ? fullHeight : (area.height - theme.spaceSm * (rows - 1)) / rows;
+  const int16_t width = fan ? fullWidth : (area.width - theme.spaceSm * (columns - 1)) / columns;
+  const int16_t stride = fan ? step : width + theme.spaceSm;
   for (int i = 0; i < hand.cardCount; ++i) {
-    ui_casino::card(screen.target(),
-                    fui::Rect{static_cast<int16_t>(area.x + (i % columns) * (width + theme.spaceSm)),
-                              static_cast<int16_t>(area.y + (i / columns) * (height + theme.spaceSm)), width, height},
-                    theme, hand.cards[i], hidden && i == 1);
+    const int count = std::min<int>(columns, hand.cardCount - (i / columns) * columns);
+    const int16_t left = area.x + (area.width - width - (count - 1) * stride) / 2;
+    ui_casino_table::card(
+        screen.target(),
+        fui::makeRect(left + (i % columns) * stride, area.y + (i / columns) * (height + theme.spaceSm), width, height),
+        theme, BlackjackGame::rank(hand.cards[i]), BlackjackGame::suit(hand.cards[i]), hidden && i == 1);
   }
 }
 
@@ -918,12 +961,19 @@ void CasinoActivity::buildRound(UiScreen& screen) {
   if (state.phase == Phase::Settled) {
     const auto next = screen.takeBottom(row, gap);
     drawButton(screen, next, tr(STR_CASINO_AGAIN), AGAIN, true);
-    const auto result = screen.takeBottom(line * 2, gap);
+    const int16_t titleLine = screen.target().lineHeight(theme.titleText.font);
+    const auto result = screen.takeBottom(titleLine + line + theme.spaceMd * 2, gap);
+    ui_casino_table::frame(screen.target(), result, theme);
     const char* label = state.handCount == 1 ? resultLabel(state.hands[0].result) : tr(STR_CASINO_ROUND_COMPLETE);
-    drawLabel(screen, fui::Rect{result.x, result.y, result.width, line}, label, true, fui::TextAlign::Center);
+    drawLabel(
+        screen,
+        fui::makeRect(result.x + theme.spaceMd, result.y + theme.spaceSm, result.width - theme.spaceMd * 2, titleLine),
+        label, true, fui::TextAlign::Center);
     netMoney(text, sizeof(text), state.roundReturnCents - state.roundWagerCents);
-    drawLabel(screen, fui::Rect{result.x, static_cast<int16_t>(result.y + line), result.width, line}, text, true,
-              fui::TextAlign::Center);
+    drawLabel(screen,
+              fui::makeRect(result.x + theme.spaceMd, result.y + titleLine + theme.spaceSm,
+                            result.width - theme.spaceMd * 2, line),
+              text, false, fui::TextAlign::Center);
     if (state.insuranceCents) {
       netMoney(money, sizeof(money), state.insuranceReturnCents - state.insuranceCents);
       snprintf(text, sizeof(text), tr(STR_CASINO_INSURANCE_RESULT), money);
@@ -937,9 +987,10 @@ void CasinoActivity::buildRound(UiScreen& screen) {
     drawButton(screen, fui::Rect{buttons.x, buttons.y, width, row}, text, INSURE, false, store.game().canInsure());
     drawButton(screen, fui::Rect{static_cast<int16_t>(buttons.right() - width), buttons.y, width, row},
                tr(STR_CASINO_DECLINE), DECLINE, true);
-    drawLabel(screen, screen.takeBottom(line, gap), tr(STR_CASINO_INSURANCE), true, fui::TextAlign::Center);
+    drawLabel(screen, screen.takeBottom(screen.target().lineHeight(theme.titleText.font), gap),
+              tr(STR_CASINO_INSURANCE), true, fui::TextAlign::Center);
   } else {
-    const auto surrender = screen.takeBottom(row, gap);
+    const auto surrender = screen.takeBottom(theme.minTouchSize, gap);
     const auto secondary = screen.takeBottom(row, gap);
     const auto primary = screen.takeBottom(row, gap);
     const int16_t width = (primary.width - theme.spaceMd) / 2;

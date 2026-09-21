@@ -5,6 +5,24 @@ withdrawals, or network play. Open **Home → Apps → Casino**. The lobby shows
 the wallet and Slots, Blackjack, Roulette, Baccarat, and Farkle, in that order.
 All five games are playable.
 
+## Table presentation
+
+Slots uses a mechanical cabinet with a single marked payline, concealed reel
+shutters, and lamps that track the reveal order. Winning reels are emphasized
+after the final reveal, and the paytable is accessible from the header.
+
+Blackjack and Baccarat use sharp playing cards with corner indices, numbered
+pip layouts, engraved backs, and offset shadows. Separate framed hands make
+dealer/player positions clear. Blackjack fans longer hands and uses compact
+rank-and-suit cards when needed. Baccarat highlights the winning position only
+after settlement. Each game keeps its wager and wallet visible.
+
+Roulette uses an engraved single-zero wheel, a betting slip with chip markers,
+and a separate winning-pocket display. On monochrome screens, red pockets use
+a stipple pattern and black pockets use solid ink; result text names the color.
+Game screens use the existing serif display font with UI-font controls. All
+reveals remain deliberate button/touch steps without continuous animation.
+
 ## Wallet and daily credit
 
 A new wallet starts at $1,000. Casino uses `HalClock::localTime()` and the
@@ -100,9 +118,10 @@ optional pair and bonus side bets are not included.
 Choose Player, Banker, or Tie and set a wager before dealing. Deal reserves the
 stake and places the opening cards face down. Press Reveal card to turn over
 one card at a time, alternating Player and Banker for the opening four cards,
-then revealing any required third cards in drawing order. Hand totals and the
-winner stay hidden until the final card; any returned stake and winnings are
-credited at that point. There is no automatic countdown or repeated animation,
+then revealing any required third cards in drawing order. A partial score counts
+only revealed cards and is marked with `+ ?` until that position is fully revealed.
+The winner stays hidden until the final card; any returned stake and winnings
+are credited at that point. There is no automatic countdown or repeated animation,
 so each reveal is deliberate and suits the e-ink display.
 
 The hands and any third cards are determined automatically by the rules;

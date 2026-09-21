@@ -7,7 +7,6 @@
 #include <cstdint>
 #include <cstdlib>
 
-#include "UiCountdown.h"
 #include "util/SlotsGame.h"
 
 namespace ui_slots {
@@ -101,6 +100,13 @@ inline void bar(fui::DrawTarget& target, fui::Rect area, const fui::ThemeTokens&
   target.text(box(area, 0, 28, 100, 44), tr(STR_SLOTS_BAR), text);
 }
 
+inline void seven(fui::DrawTarget& target, fui::Rect area, const fui::ThemeTokens& theme) {
+  const auto ink = fui::Paint::solid(theme.bodyText.color);
+  target.fill(box(area, 15, 13, 72, 15), ink);
+  stroke(target, area, 77, 24, 38, 85, 16, ink);
+  target.fill(box(area, 27, 49, 48, 8), ink);
+}
+
 inline void concealed(fui::DrawTarget& target, fui::Rect area, const fui::ThemeTokens& theme) {
   const auto ink = fui::Paint::solid(theme.bodyText.color);
   const auto paper = fui::Paint::solid(fui::invertedColor(theme.bodyText.color));
@@ -108,14 +114,19 @@ inline void concealed(fui::DrawTarget& target, fui::Rect area, const fui::ThemeT
       fui::Paint::dither(theme.bodyText.color == fui::Color::White ? fui::Color::DarkGray : fui::Color::LightGray);
   const auto inner = area.inset(fui::Insets{theme.spaceSm, theme.spaceSm, theme.spaceSm, theme.spaceSm});
   if (inner.empty()) return;
-  target.fill(inner, pattern);
+  const int16_t step = std::max<int16_t>(4, inner.height / 8);
+  for (int16_t y = inner.y; y < inner.bottom(); y += step)
+    target.fill(fui::makeRect(inner.x, y, inner.width, 1), pattern);
   const int16_t size = std::min(inner.width, inner.height) / 3;
-  const fui::Rect center{static_cast<int16_t>(inner.x + (inner.width - size) / 2),
-                         static_cast<int16_t>(inner.y + (inner.height - size) / 2), size, size};
-  target.fill(center, paper);
-  target.stroke(center, ink, 1);
-  const auto inset = center.inset(fui::Insets{3, 3, 3, 3});
-  if (!inset.empty()) target.stroke(inset, ink, 1);
+  const int16_t cx = inner.x + inner.width / 2;
+  const int16_t cy = inner.y + inner.height / 2;
+  target.fill(fui::makeRect(cx - size, cy - size, size * 2 + 1, size * 2 + 1), paper);
+  for (int16_t row = -size; row <= size; ++row) {
+    const int16_t half = size - std::abs(row);
+    target.fill(fui::makeRect(cx - half, cy + row, half * 2 + 1, 1), ink);
+  }
+  const int16_t hole = std::max<int16_t>(1, size / 3);
+  target.fill(fui::makeRect(cx - hole, cy - hole, hole * 2 + 1, hole * 2 + 1), paper);
 }
 
 }  // namespace detail
@@ -139,47 +150,89 @@ inline void symbol(fui::DrawTarget& target, fui::Rect area, const fui::ThemeToke
       detail::bar(target, square, theme);
       break;
     case SlotsGame::Symbol::Seven:
-      ui_countdown_detail::drawReadout(target, square, theme, tr(STR_SLOTS_SEVEN));
+      detail::seven(target, square, theme);
       break;
   }
 }
 
 inline void reels(fui::DrawTarget& target, fui::Rect area, const fui::ThemeTokens& theme, const SlotsGame::State& state,
                   bool preview = false) {
-  const int16_t gap = theme.spaceSm;
-  const int16_t gutter = theme.spaceMd;
-  const int16_t width = (area.width - gutter * 2 - gap * 2) / 3;
-  const int16_t height = std::min<int16_t>(area.height - theme.spaceMd, width * 4 / 3);
-  if (width < 12 || height < 12) return;
-  const int16_t left = area.x + (area.width - width * 3 - gap * 2) / 2;
-  const int16_t top = area.y + (area.height - height - theme.spaceMd) / 2;
-  const int16_t centerY = top + height / 2;
+  if (area.width < 90 || area.height < 72) return;
   const auto ink = fui::Paint::solid(theme.bodyText.color);
   const auto paper = fui::Paint::solid(fui::invertedColor(theme.bodyText.color));
+  const auto shade =
+      fui::Paint::dither(theme.bodyText.color == fui::Color::White ? fui::Color::DarkGray : fui::Color::LightGray);
+  const int16_t depth = std::max<int16_t>(3, theme.spaceSm);
+  const int16_t rim = std::max<int16_t>(5, theme.spaceSm * 2);
+  const fui::Rect face = fui::makeRect(area.x, area.y, area.width - depth, area.height - depth);
+  target.fill(fui::makeRect(face.x + depth, face.y + depth, face.width, face.height), ink);
+  target.fill(face, paper);
+  target.stroke(face, ink, 2);
+  target.stroke(face.inset(fui::makeInsets(static_cast<int16_t>(rim / 2))), ink, 1);
+  for (int16_t corner = 0; corner < 4; ++corner) {
+    const int16_t x = corner & 1 ? face.right() - rim / 2 : face.x + rim / 2;
+    const int16_t y = corner & 2 ? face.bottom() - rim / 2 : face.y + rim / 2;
+    target.fill(fui::makeRect(x - 1, y - 1, 3, 3), ink);
+  }
+  const int16_t line = target.lineHeight(theme.smallText.font);
+  const bool marquee = face.height >= line * 3 + rim * 4;
+  const int16_t topBand = marquee ? line + theme.spaceSm : rim;
+  const int16_t lampBand = std::max<int16_t>(rim * 2, line);
+  auto caption = theme.smallText;
+  caption.bold = true;
+  caption.align = fui::TextAlign::Center;
+  if (marquee)
+    target.text(fui::makeRect(face.x + rim, face.y + rim, face.width - rim * 2, line), tr(STR_SLOTS_CABINET), caption);
+  const int16_t gutter = rim + theme.spaceSm * 2;
+  const int16_t gap = std::max<int16_t>(4, theme.spaceSm);
+  const int16_t width = (face.width - gutter * 2 - gap * 2) / 3;
+  const int16_t height = face.height - rim * 2 - topBand - lampBand;
+  if (width < 12 || height < 12) return;
+  const int16_t left = face.x + (face.width - width * 3 - gap * 2) / 2;
+  const int16_t top = face.y + rim + topBand;
+  const int16_t centerY = top + height / 2;
+  const int16_t lip = std::max<int16_t>(3, std::min<int16_t>(height / 6, theme.spaceMd));
+  static constexpr SlotsGame::Symbol PREVIEW[] = {SlotsGame::Symbol::Seven, SlotsGame::Symbol::Bell,
+                                                  SlotsGame::Symbol::Cherry};
+  const bool settled = !preview && state.phase == SlotsGame::Phase::Settled;
+  const bool winning = settled && SlotsGame::returnMultiplier(state.reels) > 0;
+  const bool triple = state.reels[0] == state.reels[1] && state.reels[1] == state.reels[2];
   for (uint8_t i = 0; i < SlotsGame::REELS; ++i) {
-    const fui::Rect reel{static_cast<int16_t>(left + i * (width + gap)), top, width, height};
-    target.fill(reel, paper);
-    target.stroke(reel, ink, 2);
-    const auto content = reel.inset(fui::Insets{theme.spaceMd, theme.spaceSm, theme.spaceMd, theme.spaceSm});
-    if (!preview && i < state.revealedReels)
-      symbol(target, content, theme, state.reels[i]);
+    const auto reel = fui::makeRect(left + i * (width + gap), top, width, height);
+    target.fill(reel, ink);
+    const auto window = reel.inset(fui::Insets{2, 2, 2, 2});
+    target.fill(window, paper);
+    target.fill(fui::makeRect(window.x, window.y, window.width, lip), shade);
+    target.fill(fui::makeRect(window.x, window.bottom() - lip, window.width, lip), shade);
+    target.fill(fui::makeRect(window.x, window.y + lip, window.width, 1), ink);
+    target.fill(fui::makeRect(window.x, window.bottom() - lip - 1, window.width, 1), ink);
+    const auto content = window.inset(fui::Insets{static_cast<int16_t>(lip + 3), 4, static_cast<int16_t>(lip + 3), 4});
+    const bool revealed = !preview && i < state.revealedReels;
+    if (preview || revealed)
+      symbol(target, content, theme, preview ? PREVIEW[i] : state.reels[i]);
     else
       detail::concealed(target, content, theme);
-    if (!preview && state.phase == SlotsGame::Phase::Revealing && i == state.revealedReels)
-      target.fill(fui::Rect{static_cast<int16_t>(reel.x + width / 3), static_cast<int16_t>(reel.bottom() + gap),
-                            static_cast<int16_t>(width / 3), 2},
-                  ink);
+    const bool paid = winning && (triple || state.reels[i] == SlotsGame::Symbol::Cherry);
+    if (paid) {
+      target.stroke(reel, ink, 3);
+      target.fill(fui::makeRect(reel.x + gap, reel.bottom() + 3, reel.width - gap * 2, 3), ink);
+    }
+    const int16_t lamp = std::max<int16_t>(4, std::min<int16_t>(7, lampBand / 3));
+    const auto indicator =
+        fui::makeRect(reel.x + (reel.width - lamp) / 2, reel.bottom() + (lampBand - lamp) / 2, lamp, lamp);
+    if (revealed || paid) {
+      target.fill(indicator, ink);
+    } else {
+      target.stroke(indicator, ink, 1);
+      if (!preview && i == state.revealedReels) target.stroke(indicator.inset(fui::Insets{-2, -2, -2, -2}), ink, 1);
+    }
   }
-  const int16_t tick = std::max<int16_t>(2, std::min<int16_t>(gutter - 2, gap));
-  target.line(fui::Point{static_cast<int16_t>(left - tick - 2), static_cast<int16_t>(centerY - tick)},
-              fui::Point{static_cast<int16_t>(left - 2), centerY}, 1, ink);
-  target.line(fui::Point{static_cast<int16_t>(left - tick - 2), static_cast<int16_t>(centerY + tick)},
-              fui::Point{static_cast<int16_t>(left - 2), centerY}, 1, ink);
-  const int16_t right = left + width * 3 + gap * 2;
-  target.line(fui::Point{static_cast<int16_t>(right + tick + 2), static_cast<int16_t>(centerY - tick)},
-              fui::Point{static_cast<int16_t>(right + 2), centerY}, 1, ink);
-  target.line(fui::Point{static_cast<int16_t>(right + tick + 2), static_cast<int16_t>(centerY + tick)},
-              fui::Point{static_cast<int16_t>(right + 2), centerY}, 1, ink);
+  const int16_t tick = std::max<int16_t>(3, std::min<int16_t>(7, gutter - rim));
+  for (int16_t row = -tick; row <= tick; ++row) {
+    const int16_t span = tick - std::abs(row) + 1;
+    target.fill(fui::makeRect(left - tick - 3, centerY + row, span, 1), ink);
+    target.fill(fui::makeRect(left + width * 3 + gap * 2 + tick + 2 - span, centerY + row, span, 1), ink);
+  }
 }
 
 }  // namespace ui_slots
