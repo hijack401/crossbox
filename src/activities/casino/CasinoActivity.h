@@ -1,5 +1,6 @@
 #pragma once
 
+#include "CasinoRefreshPolicy.h"
 #include "CasinoStore.h"
 #include "activities/Activity.h"
 #include "components/UiAppHost.h"
@@ -91,6 +92,7 @@ class CasinoActivity final : public Activity, private UiAppHost {
   static constexpr freeink::ui::ActionId ACTION_CONTROL = 1;
   static constexpr int64_t PRESETS[] = {1000, 2000, 4000, 8000};
   CasinoStore store;
+  CasinoRefreshPolicy refreshPolicy;
   freeink::ui::ButtonProps buttonProps;
   int16_t focusTargets[24]{};
   int focusCount = 0;

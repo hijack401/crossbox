@@ -58,10 +58,12 @@ void CasinoActivity::activateFarkle(int control) {
       betCents = state.wagerCents;
       farkleTarget = state.targetScore;
       changed = game.nextMatch();
+      if (changed) refreshPolicy.allowCleaning();
       normalizeBet();
     }
   } else if (state.phase == Phase::TurnEnded) {
     if (control == F_CONTINUE) changed = store.advanceFarkleTurn();
+    if (changed) refreshPolicy.allowCleaning();
   } else if (state.phase == Phase::AwaitRoll) {
     if (control == F_ROLL) changed = store.rollFarkle(&CasinoActivity::randomWord);
   } else if (state.activePlayer == Player::You) {

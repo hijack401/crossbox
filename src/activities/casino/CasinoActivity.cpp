@@ -2,6 +2,7 @@
 
 #include <HalClock.h>
 #include <I18n.h>
+#include <Logging.h>
 
 #include <algorithm>
 #include <cstdio>
@@ -203,6 +204,7 @@ void CasinoActivity::goBack() {
     selectedControl = R_ADD;
   } else if (view == View::Table) {
     view = View::Lobby;
+    refreshPolicy.allowCleaning();
     selectedControl = tableGame == Game::Farkle     ? FARKLE
                       : tableGame == Game::Slots    ? SLOTS
                       : tableGame == Game::Roulette ? ROULETTE
@@ -369,6 +371,7 @@ void CasinoActivity::activate(const int control) {
           break;
         case AGAIN:
           changed = game.nextRound();
+          if (changed) refreshPolicy.allowCleaning();
           normalizeBet();
           break;
         default:
@@ -397,6 +400,7 @@ void CasinoActivity::activateBaccarat(int control) {
   }
   if (game.state().phase == BaccaratGame::Phase::Settled) {
     if (control == AGAIN && game.nextRound()) {
+      refreshPolicy.allowCleaning();
       normalizeBet();
       selectedControl = DEAL;
       saveChanges();
@@ -1164,5 +1168,7 @@ void CasinoActivity::render(RenderLock&&) {
   renderUi();
   const auto labels = mappedInput.mapLabels(tr(STR_BACK), tr(STR_SELECT), tr(STR_DIR_UP), tr(STR_DIR_DOWN));
   GUI.drawButtonHints(renderer, labels.btn1, labels.btn2, labels.btn3, labels.btn4);
-  renderer.displayBuffer(HalDisplay::HALF_REFRESH);
+  const bool clean = refreshPolicy.nextFrameNeedsCleaning();
+  LOG_DBG("CASINO", "Display refresh: %s", clean ? "clean" : "fast");
+  renderer.displayBuffer(clean ? HalDisplay::HALF_REFRESH : HalDisplay::FAST_REFRESH);
 }

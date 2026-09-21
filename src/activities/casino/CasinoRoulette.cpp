@@ -112,6 +112,7 @@ void CasinoActivity::activateRoulette(int control) {
       }
     } else if (state.phase == Phase::Settled) {
       if ((control == R_NEW || control == R_REPEAT) && game.nextRound(control == R_REPEAT)) {
+        refreshPolicy.allowCleaning();
         rouletteListPage = 0;
         normalizeBet();
         selectedControl = control == R_REPEAT ? R_SPIN : R_ADD;

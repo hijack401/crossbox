@@ -25,11 +25,13 @@ void CasinoActivity::activateSlots(int control) {
   }
   if (state.phase == Phase::Settled) {
     if (control == S_AGAIN && store.spinSlots(state.wagerCents, &CasinoActivity::randomWord)) {
+      refreshPolicy.allowCleaning();
       selectedControl = S_REVEAL;
       saveChanges();
     } else if (control == S_CHANGE_BET) {
       betCents = state.wagerCents;
       if (game.nextRound()) {
+        refreshPolicy.allowCleaning();
         normalizeBet();
         selectedControl = S_SPIN;
         saveChanges();
