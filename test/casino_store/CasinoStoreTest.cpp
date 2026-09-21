@@ -12,10 +12,11 @@ namespace {
 constexpr char MAIN[] = "/.crosspoint/casino.bin";
 constexpr char TEMP[] = "/.crosspoint/casino.tmp";
 constexpr char BACKUP[] = "/.crosspoint/casino.bak";
-constexpr size_t CURRENT_FILE_BYTES = 1257;
+constexpr size_t CURRENT_FILE_BYTES = 1300;
 constexpr size_t ROULETTE_OFFSET = 1037;
 constexpr size_t ROULETTE_TOTAL_OFFSET = ROULETTE_OFFSET + RouletteGame::MAX_BETS * 11;
 constexpr size_t SLOTS_OFFSET = 1232;
+constexpr size_t FARKLE_OFFSET = 1253;
 
 struct SpinSample {
   uint32_t value;
@@ -105,6 +106,31 @@ void expectState(const SlotsGame::State& actual, const SlotsGame::State& expecte
   EXPECT_TRUE(std::equal(std::begin(actual.reels), std::end(actual.reels), std::begin(expected.reels)));
 }
 
+void expectState(const FarkleGame::State& actual, const FarkleGame::State& expected) {
+  EXPECT_EQ(actual.wagerCents, expected.wagerCents);
+  EXPECT_EQ(actual.returnCents, expected.returnCents);
+  EXPECT_TRUE(std::equal(std::begin(actual.scores), std::end(actual.scores), std::begin(expected.scores)));
+  EXPECT_EQ(actual.turnPoints, expected.turnPoints);
+  EXPECT_EQ(actual.targetScore, expected.targetScore);
+  EXPECT_TRUE(std::equal(std::begin(actual.dice), std::end(actual.dice), std::begin(expected.dice)));
+  EXPECT_EQ(actual.heldMask, expected.heldMask);
+  EXPECT_EQ(actual.rolledMask, expected.rolledMask);
+  EXPECT_EQ(actual.activePlayer, expected.activePlayer);
+  EXPECT_EQ(actual.phase, expected.phase);
+  EXPECT_EQ(actual.endReason, expected.endReason);
+}
+
+struct DiceRoll {
+  uint8_t faces[6];
+  unsigned calls = 0;
+};
+
+uint32_t fixedDie(void* context) {
+  auto& roll = *static_cast<DiceRoll*>(context);
+  const auto face = roll.faces[roll.calls++ % 6];
+  return 6 + face - 1;
+}
+
 void prepareShoe(BlackjackGame& game, std::initializer_list<uint8_t> prefix) {
   auto state = game.state();
   for (size_t i = 0; i < BlackjackGame::SHOE_CARDS; ++i) state.shoe[i] = static_cast<uint8_t>(i % 52);
@@ -144,6 +170,7 @@ void checkpoint(CasinoStore& store) {
   expectState(reloaded.baccarat().state(), store.baccarat().state());
   expectState(reloaded.roulette().state(), store.roulette().state());
   expectState(reloaded.slots().state(), store.slots().state());
+  expectState(reloaded.farkle().state(), store.farkle().state());
   ASSERT_TRUE(reloaded.save());
   EXPECT_EQ(casinoFake::files.at(MAIN), original);
 }
@@ -279,6 +306,30 @@ std::string versionFourSnapshot(const BlackjackGame::State& blackjack, const Bac
   number(roulette.betCount, 1);
   number(roulette.result, 1);
   number(static_cast<uint8_t>(roulette.phase), 1);
+  number(0, 4);
+  repairChecksum(bytes);
+  return bytes;
+}
+
+std::string versionFiveSnapshot(const CasinoStore& store) {
+  std::string bytes = versionFourSnapshot(store.game().state(), store.baccarat().state(), store.roulette().state());
+  bytes.resize(bytes.size() - 4);
+  bytes.reserve(1257);
+  bytes[4] = 5;
+  bytes[6] = static_cast<char>(1245 & 0xff);
+  bytes[7] = static_cast<char>(1245 >> 8);
+  const auto number = [&bytes](uint64_t value, unsigned size) {
+    for (unsigned i = 0; i < size; ++i) {
+      bytes += static_cast<char>(value);
+      value >>= 8;
+    }
+  };
+  const auto& slots = store.slots().state();
+  number(slots.wagerCents, 8);
+  number(slots.returnCents, 8);
+  for (const auto symbol : slots.reels) number(static_cast<uint8_t>(symbol), 1);
+  number(slots.revealedReels, 1);
+  number(static_cast<uint8_t>(slots.phase), 1);
   number(0, 4);
   repairChecksum(bytes);
   return bytes;
@@ -571,7 +622,7 @@ TEST_F(CasinoPersistence, MigratesLegacyBlackjackHandWithoutChangingWalletDayOrS
   EXPECT_EQ(casinoFake::files.at(MAIN), bytes);
   ASSERT_TRUE(migrated.save());
   EXPECT_EQ(casinoFake::files.at(MAIN).size(), CURRENT_FILE_BYTES);
-  EXPECT_EQ(static_cast<uint8_t>(casinoFake::files.at(MAIN)[4]), 5);
+  EXPECT_EQ(static_cast<uint8_t>(casinoFake::files.at(MAIN)[4]), 6);
   EXPECT_EQ(casinoFake::files.at(BACKUP), bytes);
   checkpoint(migrated);
   ASSERT_TRUE(migrated.game().stand());
@@ -841,7 +892,7 @@ TEST_F(CasinoPersistence, MigratesVersionTwoSettledAndBettingWithoutPayingAgain)
     EXPECT_EQ(casinoFake::files.at(MAIN), bytes);
     ASSERT_TRUE(migrated.save());
     EXPECT_EQ(casinoFake::files.at(MAIN).size(), CURRENT_FILE_BYTES);
-    EXPECT_EQ(static_cast<uint8_t>(casinoFake::files.at(MAIN)[4]), 5);
+    EXPECT_EQ(static_cast<uint8_t>(casinoFake::files.at(MAIN)[4]), 6);
     EXPECT_EQ(casinoFake::files.at(BACKUP), bytes);
     checkpoint(migrated);
   }
@@ -932,7 +983,7 @@ TEST_F(CasinoPersistence, MigratesVersionThreeWithBlackjackAndEveryBaccaratRevea
     EXPECT_EQ(casinoFake::files.at(MAIN), bytes);
     ASSERT_TRUE(migrated.save());
     EXPECT_EQ(casinoFake::files.at(MAIN).size(), CURRENT_FILE_BYTES);
-    EXPECT_EQ(static_cast<uint8_t>(casinoFake::files.at(MAIN)[4]), 5);
+    EXPECT_EQ(static_cast<uint8_t>(casinoFake::files.at(MAIN)[4]), 6);
     EXPECT_EQ(casinoFake::files.at(BACKUP), bytes);
     checkpoint(migrated);
     finishBaccarat(migrated);
@@ -1197,7 +1248,7 @@ TEST_F(CasinoPersistence, MigratesVersionFourPreservingRouletteAndUnrevealedBacc
     EXPECT_EQ(casinoFake::files.at(MAIN), bytes);
     ASSERT_TRUE(migrated.save());
     EXPECT_EQ(casinoFake::files.at(MAIN).size(), CURRENT_FILE_BYTES);
-    EXPECT_EQ(static_cast<uint8_t>(casinoFake::files.at(MAIN)[4]), 5);
+    EXPECT_EQ(static_cast<uint8_t>(casinoFake::files.at(MAIN)[4]), 6);
     EXPECT_EQ(casinoFake::files.at(BACKUP), bytes);
     checkpoint(migrated);
 
@@ -1449,4 +1500,325 @@ TEST_F(CasinoPersistence, RecoversLastUnrevealedCardAndWalletTogetherFromBackup)
   EXPECT_FALSE(recovered.revealBaccarat());
   EXPECT_EQ(recovered.game().state().balanceCents, 100950);
   checkpoint(recovered);
+}
+
+TEST_F(CasinoPersistence, MigratesVersionFiveWithAllExistingGamesPendingAndWalletIntact) {
+  CasinoStore original;
+  ASSERT_TRUE(original.load());
+  ASSERT_TRUE(original.game().applyDailyCredit(20000));
+  ASSERT_TRUE(original.game().applyDailyCredit(20001));
+  prepareShoe(original.game(), {9, 6, 7, 8, 1});
+  ASSERT_TRUE(original.game().startRound(2500, nullptr));
+  prepareShoe(original.baccarat(), {3, 4, 3, 3});
+  ASSERT_TRUE(original.dealBaccarat(BaccaratGame::Bet::Banker, 1000, nullptr));
+  ASSERT_TRUE(original.revealBaccarat());
+  ASSERT_TRUE(original.roulette().addBet({RouletteGame::Type::Straight, 17}, 1000, 106500));
+  SpinSample roulette{37 + 17};
+  ASSERT_TRUE(original.spinRoulette(fixedSpin, &roulette));
+  SpinSample slots{38};
+  ASSERT_TRUE(original.spinSlots(1000, fixedSpin, &slots));
+  ASSERT_TRUE(original.revealSlots());
+  const auto bytes = versionFiveSnapshot(original);
+  ASSERT_EQ(bytes.size(), 1257u);
+  casinoFake::files[MAIN] = bytes;
+
+  CasinoStore migrated;
+  ASSERT_TRUE(migrated.load());
+  expectState(migrated.game().state(), original.game().state());
+  expectState(migrated.baccarat().state(), original.baccarat().state());
+  expectState(migrated.roulette().state(), original.roulette().state());
+  expectState(migrated.slots().state(), original.slots().state());
+  expectState(migrated.farkle().state(), FarkleGame::State{});
+  EXPECT_FALSE(migrated.game().applyDailyCredit(20001));
+  EXPECT_EQ(casinoFake::files.at(MAIN), bytes);
+  ASSERT_TRUE(migrated.save());
+  EXPECT_EQ(casinoFake::files.at(MAIN).size(), CURRENT_FILE_BYTES);
+  EXPECT_EQ(static_cast<uint8_t>(casinoFake::files.at(MAIN)[4]), 6);
+  EXPECT_EQ(casinoFake::files.at(BACKUP), bytes);
+  checkpoint(migrated);
+
+  ASSERT_TRUE(migrated.startFarkle(1000, 4000));
+  EXPECT_EQ(migrated.game().state().balanceCents, 103500);
+  finishBaccarat(migrated);
+  ASSERT_TRUE(migrated.revealRoulette());
+  finishSlots(migrated);
+  ASSERT_TRUE(migrated.game().stand());
+  EXPECT_EQ(migrated.game().state().balanceCents, 243950);
+  EXPECT_EQ(migrated.farkle().state().phase, FarkleGame::Phase::AwaitRoll);
+  checkpoint(migrated);
+}
+
+TEST_F(CasinoPersistence, RestoresEveryFarkleTurnPhaseAndRerollsOnlyUnheldDice) {
+  CasinoStore store;
+  ASSERT_TRUE(store.load());
+  checkpoint(store);
+  ASSERT_TRUE(store.startFarkle(1000, 4000));
+  EXPECT_EQ(store.game().state().balanceCents, 99000);
+  checkpoint(store);
+  DiceRoll first{{1, 2, 3, 4, 4, 6}};
+  ASSERT_TRUE(store.rollFarkle(fixedDie, &first));
+  EXPECT_EQ(first.calls, 6u);
+  EXPECT_EQ(store.farkle().state().phase, FarkleGame::Phase::Selecting);
+  checkpoint(store);
+  CasinoStore resumed;
+  ASSERT_TRUE(resumed.load());
+  EXPECT_FALSE(resumed.rollFarkle(fixedDie, &first));
+  EXPECT_FALSE(resumed.startFarkle(1000, 4000));
+  EXPECT_EQ(first.calls, 6u);
+  DiceRoll next{{5, 2, 3, 4, 6, 6}};
+  ASSERT_TRUE(resumed.continueFarkle(0x01, fixedDie, &next));
+  EXPECT_EQ(next.calls, 5u);
+  EXPECT_EQ(resumed.farkle().state().heldMask, 0x01);
+  EXPECT_EQ(resumed.farkle().state().dice[0], 1);
+  EXPECT_EQ(resumed.farkle().state().turnPoints, 100u);
+  checkpoint(resumed);
+  ASSERT_TRUE(store.load());
+  ASSERT_TRUE(store.bankFarkle(0x02));
+  EXPECT_EQ(store.farkle().state().scores[0], 150u);
+  EXPECT_EQ(store.farkle().state().phase, FarkleGame::Phase::TurnEnded);
+  EXPECT_EQ(store.farkle().state().endReason, FarkleGame::EndReason::Banked);
+  EXPECT_EQ(store.game().state().balanceCents, 99000);
+  checkpoint(store);
+  ASSERT_TRUE(resumed.load());
+  ASSERT_TRUE(resumed.advanceFarkleTurn());
+  EXPECT_EQ(resumed.farkle().state().activePlayer, FarkleGame::Player::Opponent);
+  EXPECT_EQ(resumed.farkle().state().phase, FarkleGame::Phase::AwaitRoll);
+  checkpoint(resumed);
+  DiceRoll bust{{2, 2, 3, 3, 4, 6}};
+  ASSERT_TRUE(resumed.rollFarkle(fixedDie, &bust));
+  EXPECT_EQ(resumed.farkle().state().phase, FarkleGame::Phase::TurnEnded);
+  EXPECT_EQ(resumed.farkle().state().endReason, FarkleGame::EndReason::Bust);
+  EXPECT_EQ(resumed.farkle().state().turnPoints, 0u);
+  checkpoint(resumed);
+  ASSERT_TRUE(store.load());
+  ASSERT_TRUE(store.advanceFarkleTurn());
+  EXPECT_EQ(store.farkle().state().activePlayer, FarkleGame::Player::You);
+  EXPECT_EQ(store.farkle().state().scores[0], 150u);
+  EXPECT_EQ(store.game().state().balanceCents, 99000);
+  checkpoint(store);
+}
+
+TEST_F(CasinoPersistence, PreservesHotDiceAndLosesOnlyUnbankedPointsOnBust) {
+  CasinoStore store;
+  ASSERT_TRUE(store.load());
+  ASSERT_TRUE(store.startFarkle(1000, 10000));
+  DiceRoll straight{{1, 2, 3, 4, 5, 6}};
+  ASSERT_TRUE(store.rollFarkle(fixedDie, &straight));
+  DiceRoll scoring{{5, 2, 3, 3, 4, 6}};
+  ASSERT_TRUE(store.continueFarkle(0x3f, fixedDie, &scoring));
+  EXPECT_EQ(scoring.calls, 6u);
+  EXPECT_EQ(store.farkle().state().heldMask, 0);
+  EXPECT_EQ(store.farkle().state().turnPoints, 1500u);
+  checkpoint(store);
+  CasinoStore resumed;
+  ASSERT_TRUE(resumed.load());
+  DiceRoll bust{{2, 2, 3, 4, 6, 6}};
+  ASSERT_TRUE(resumed.continueFarkle(0x01, fixedDie, &bust));
+  EXPECT_EQ(bust.calls, 5u);
+  EXPECT_EQ(resumed.farkle().state().phase, FarkleGame::Phase::TurnEnded);
+  EXPECT_EQ(resumed.farkle().state().endReason, FarkleGame::EndReason::Bust);
+  EXPECT_EQ(resumed.farkle().state().turnPoints, 0u);
+  EXPECT_EQ(resumed.farkle().state().scores[0], 0u);
+  EXPECT_EQ(resumed.game().state().balanceCents, 99000);
+  checkpoint(resumed);
+}
+
+TEST_F(CasinoPersistence, FarkleWinnerReturnsStakeAndProfitExactlyOnceAcrossRestart) {
+  for (const bool opponentWins : {false, true}) {
+    SCOPED_TRACE(opponentWins);
+    casinoFake::reset();
+    CasinoStore store;
+    ASSERT_TRUE(store.load());
+    ASSERT_TRUE(store.startFarkle(1000, 1000));
+    if (opponentWins) {
+      DiceRoll bust{{2, 2, 3, 3, 4, 6}};
+      ASSERT_TRUE(store.rollFarkle(fixedDie, &bust));
+      ASSERT_TRUE(store.advanceFarkleTurn());
+    }
+    DiceRoll win{{1, 1, 1, 2, 3, 4}};
+    ASSERT_TRUE(store.rollFarkle(fixedDie, &win));
+    checkpoint(store);
+    CasinoStore resumed;
+    ASSERT_TRUE(resumed.load());
+    ASSERT_TRUE(resumed.bankFarkle(0x07));
+    EXPECT_EQ(resumed.farkle().state().phase, FarkleGame::Phase::Settled);
+    EXPECT_EQ(resumed.farkle().state().returnCents, opponentWins ? 0 : 2000);
+    EXPECT_EQ(resumed.game().state().balanceCents, opponentWins ? 99000 : 101000);
+    EXPECT_FALSE(resumed.bankFarkle(0x07));
+    EXPECT_FALSE(resumed.advanceFarkleTurn());
+    checkpoint(resumed);
+    ASSERT_TRUE(store.load());
+    EXPECT_FALSE(store.bankFarkle(0x07));
+    EXPECT_EQ(store.game().state().balanceCents, opponentWins ? 99000 : 101000);
+    ASSERT_TRUE(store.farkle().nextMatch());
+    checkpoint(store);
+    ASSERT_TRUE(store.startFarkle(2000, 6000));
+    EXPECT_EQ(store.game().state().balanceCents, opponentWins ? 97000 : 99000);
+    EXPECT_FALSE(store.startFarkle(2000, 6000));
+    checkpoint(store);
+  }
+}
+
+TEST_F(CasinoPersistence, RejectsFarkleWithoutStorageFundsValidTargetOrScoringSelection) {
+  CasinoStore store;
+  DiceRoll roll{{1, 2, 3, 3, 4, 6}};
+  EXPECT_FALSE(store.startFarkle(1000, 4000));
+  EXPECT_FALSE(store.rollFarkle(fixedDie, &roll));
+  EXPECT_FALSE(store.continueFarkle(0x01, fixedDie, &roll));
+  EXPECT_FALSE(store.bankFarkle(0x01));
+  EXPECT_FALSE(store.advanceFarkleTurn());
+  ASSERT_TRUE(store.load());
+  const auto empty = store.farkle().state();
+  for (const int64_t wager : {-100LL, 0LL, 99LL, 150LL, 100100LL}) {
+    EXPECT_FALSE(store.startFarkle(wager, 4000));
+  }
+  for (const uint32_t target : {0u, 999u, 1200u, 10500u}) EXPECT_FALSE(store.startFarkle(1000, target));
+  expectState(store.farkle().state(), empty);
+  EXPECT_EQ(store.game().state().balanceCents, 100000);
+  ASSERT_TRUE(store.startFarkle(1000, 4000));
+  EXPECT_FALSE(store.rollFarkle(nullptr));
+  EXPECT_EQ(roll.calls, 0u);
+  ASSERT_TRUE(store.rollFarkle(fixedDie, &roll));
+  const auto selected = store.farkle().state();
+  EXPECT_FALSE(store.continueFarkle(0x02, fixedDie, &roll));
+  EXPECT_FALSE(store.continueFarkle(0x01, nullptr));
+  EXPECT_FALSE(store.bankFarkle(0x02));
+  EXPECT_EQ(roll.calls, 6u);
+  expectState(store.farkle().state(), selected);
+  EXPECT_EQ(store.game().state().balanceCents, 99000);
+  checkpoint(store);
+
+  store.farkle().reset();
+  ASSERT_TRUE(store.game().settleExternalWager(99000, 0));
+  EXPECT_FALSE(store.startFarkle(100, 4000));
+  EXPECT_EQ(store.game().state().balanceCents, 0);
+}
+
+TEST_F(CasinoPersistence, FarkleMaximumWinClampsSharedWalletAndRetainsFullResult) {
+  CasinoStore store;
+  ASSERT_TRUE(store.load());
+  auto maximum = store.game().state();
+  maximum.balanceCents = BlackjackGame::MAX_BALANCE_CENTS;
+  ASSERT_TRUE(store.game().restore(maximum));
+  ASSERT_TRUE(store.startFarkle(maximum.balanceCents, 1000));
+  EXPECT_EQ(store.game().state().balanceCents, 0);
+  DiceRoll win{{1, 1, 1, 2, 3, 4}};
+  ASSERT_TRUE(store.rollFarkle(fixedDie, &win));
+  ASSERT_TRUE(store.bankFarkle(0x07));
+  EXPECT_EQ(store.farkle().state().returnCents, maximum.balanceCents * 2);
+  EXPECT_EQ(store.game().state().balanceCents, maximum.balanceCents);
+  EXPECT_FALSE(store.bankFarkle(0x07));
+  checkpoint(store);
+}
+
+TEST_F(CasinoPersistence, FailedFarkleStartRollAndWinningBankSaveRetryWithoutDuplicatingPayment) {
+  for (unsigned action = 0; action < 3; ++action) {
+    for (unsigned failure = 0; failure < 4; ++failure) {
+      SCOPED_TRACE(action);
+      SCOPED_TRACE(failure);
+      casinoFake::reset();
+      CasinoStore store;
+      ASSERT_TRUE(store.load());
+      DiceRoll win{{1, 1, 1, 2, 3, 4}};
+      if (action > 0) ASSERT_TRUE(store.startFarkle(1000, 1000));
+      if (action == 2) ASSERT_TRUE(store.rollFarkle(fixedDie, &win));
+      ASSERT_TRUE(store.save());
+      const auto previousBytes = casinoFake::files.at(MAIN);
+      const auto previousGame = store.farkle().state();
+      const auto previousBalance = store.game().state().balanceCents;
+      ASSERT_TRUE(action == 0   ? store.startFarkle(1000, 1000)
+                  : action == 1 ? store.rollFarkle(fixedDie, &win)
+                                : store.bankFarkle(0x07));
+      const auto pendingGame = store.farkle().state();
+      const auto pendingBalance = store.game().state().balanceCents;
+      switch (failure) {
+        case 0:
+          casinoFake::writeRemaining = FARKLE_OFFSET + 20;
+          break;
+        case 1:
+          casinoFake::failRenameAt = 1;
+          break;
+        case 2:
+          casinoFake::corruptOnClose = true;
+          break;
+        case 3:
+          casinoFake::readRemaining = FARKLE_OFFSET + 20;
+          break;
+      }
+      EXPECT_FALSE(store.save());
+      EXPECT_EQ(casinoFake::files.at(MAIN), previousBytes);
+      expectState(store.farkle().state(), pendingGame);
+      EXPECT_EQ(store.game().state().balanceCents, pendingBalance);
+      if (action == 0) EXPECT_FALSE(store.startFarkle(1000, 1000));
+      if (action == 1) EXPECT_FALSE(store.rollFarkle(fixedDie, &win));
+      if (action == 2) EXPECT_FALSE(store.bankFarkle(0x07));
+      casinoFake::writeRemaining = casinoFake::readRemaining = casinoFake::failRenameAt = -1;
+      casinoFake::corruptOnClose = false;
+      CasinoStore restarted;
+      ASSERT_TRUE(restarted.load());
+      expectState(restarted.farkle().state(), previousGame);
+      EXPECT_EQ(restarted.game().state().balanceCents, previousBalance);
+      ASSERT_TRUE(store.save());
+      ASSERT_TRUE(restarted.load());
+      expectState(restarted.farkle().state(), pendingGame);
+      EXPECT_EQ(restarted.game().state().balanceCents, pendingBalance);
+      if (action == 0) ASSERT_TRUE(restarted.rollFarkle(fixedDie, &win));
+      if (action < 2) ASSERT_TRUE(restarted.bankFarkle(0x07));
+      EXPECT_FALSE(restarted.bankFarkle(0x07));
+      EXPECT_EQ(restarted.game().state().balanceCents, 101000);
+      EXPECT_EQ(win.calls, 6u);
+      checkpoint(restarted);
+    }
+  }
+}
+
+TEST_F(CasinoPersistence, RecoversFarkleAndMatchingWalletFromBackupAndTemporary) {
+  for (const bool fromBackup : {false, true}) {
+    casinoFake::reset();
+    CasinoStore store;
+    ASSERT_TRUE(store.load());
+    ASSERT_TRUE(store.startFarkle(1000, 4000));
+    DiceRoll first{{1, 2, 3, 4, 4, 6}};
+    ASSERT_TRUE(store.rollFarkle(fixedDie, &first));
+    DiceRoll next{{5, 2, 3, 4, 6, 6}};
+    ASSERT_TRUE(store.continueFarkle(0x01, fixedDie, &next));
+    ASSERT_TRUE(store.save());
+    const auto original = casinoFake::files.at(MAIN);
+    casinoFake::files.erase(MAIN);
+    casinoFake::files[fromBackup ? BACKUP : TEMP] = original;
+    CasinoStore recovered;
+    ASSERT_TRUE(recovered.load());
+    EXPECT_EQ(recovered.loadStatus(), CasinoStore::LoadStatus::Recovered);
+    expectState(recovered.farkle().state(), store.farkle().state());
+    EXPECT_EQ(recovered.game().state().balanceCents, 99000);
+    EXPECT_FALSE(recovered.startFarkle(1000, 4000));
+    ASSERT_TRUE(recovered.bankFarkle(0x02));
+    EXPECT_EQ(recovered.farkle().state().scores[0], 150u);
+    checkpoint(recovered);
+  }
+}
+
+TEST_F(CasinoPersistence, RejectsMalformedFarkleEvenWithValidChecksumAndPreservesLiveMatch) {
+  CasinoStore store;
+  ASSERT_TRUE(store.load());
+  ASSERT_TRUE(store.startFarkle(1000, 4000));
+  DiceRoll first{{1, 2, 3, 4, 4, 6}};
+  ASSERT_TRUE(store.rollFarkle(fixedDie, &first));
+  ASSERT_TRUE(store.save());
+  const auto valid = casinoFake::files.at(MAIN);
+  const auto game = store.farkle().state();
+  const auto wallet = store.game().state();
+  const size_t offsets[] = {0, 7, 8, 15, 19, 23, 27, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42};
+  for (const auto offset : offsets) {
+    SCOPED_TRACE(offset);
+    casinoFake::files[MAIN] = valid;
+    casinoFake::files[MAIN][FARKLE_OFFSET + offset] = static_cast<char>(0xff);
+    repairChecksum(casinoFake::files[MAIN]);
+    EXPECT_FALSE(store.load());
+    EXPECT_TRUE(store.isReadOnly());
+    EXPECT_FALSE(store.bankFarkle(0x01));
+    EXPECT_FALSE(store.continueFarkle(0x01, fixedDie, &first));
+    expectState(store.game().state(), wallet);
+    expectState(store.farkle().state(), game);
+  }
 }

@@ -26,7 +26,7 @@ class CasinoActivity final : public Activity, private UiAppHost {
     RouletteOptions,
     RouletteStake
   };
-  enum class Game : uint8_t { Blackjack, Baccarat, Roulette, Slots };
+  enum class Game : uint8_t { Blackjack, Baccarat, Roulette, Slots, Farkle };
   enum Control : int16_t {
     BLACKJACK,
     RULES,
@@ -77,7 +77,16 @@ class CasinoActivity final : public Activity, private UiAppHost {
     S_SPIN,
     S_REVEAL,
     S_AGAIN,
-    S_CHANGE_BET
+    S_CHANGE_BET,
+    FARKLE = 220,
+    RULES_FARKLE,
+    F_START,
+    F_ROLL,
+    F_BANK,
+    F_CONTINUE,
+    F_AGAIN,
+    F_DIE_BASE = 230,
+    F_TARGET_BASE = 240
   };
   static constexpr freeink::ui::ActionId ACTION_CONTROL = 1;
   static constexpr int64_t PRESETS[] = {1000, 2000, 4000, 8000};
@@ -109,6 +118,8 @@ class CasinoActivity final : public Activity, private UiAppHost {
   int rouletteChoicesPerPage = 12;
   RouletteGame::Bet rouletteBet{};
   BaccaratGame::Bet baccaratBet = BaccaratGame::Bet::Banker;
+  uint8_t farkleSelection = 0;
+  uint32_t farkleTarget = FarkleGame::DEFAULT_TARGET_SCORE;
 
   static void casinoScreen(UiScreen& screen, void* user);
   static void onControl(const freeink::ui::ActionEvent& event, void* user);
@@ -126,6 +137,12 @@ class CasinoActivity final : public Activity, private UiAppHost {
   void buildSlotsBetting(UiScreen& screen);
   void buildSlotsRound(UiScreen& screen);
   void buildSlotsPaytable(UiScreen& screen);
+  void activateFarkle(int control);
+  int farklePrimaryControl() const;
+  void buildFarkleBetting(UiScreen& screen);
+  void buildFarkleRound(UiScreen& screen);
+  void buildFarklePaytable(UiScreen& screen);
+  void drawFarkleDice(UiScreen& screen, freeink::ui::Rect area);
   void activateRoulette(int control);
   void buildRouletteBetting(UiScreen& screen);
   void buildRouletteRound(UiScreen& screen);

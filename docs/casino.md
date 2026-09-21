@@ -2,8 +2,8 @@
 
 Casino is a local game using virtual dollars. It has no deposits, purchases,
 withdrawals, or network play. Open **Home → Apps → Casino**. The lobby shows
-the wallet and Slots, Blackjack, Roulette, and Baccarat, in that order.
-All four games are playable.
+the wallet and Slots, Blackjack, Roulette, Baccarat, and Farkle, in that order.
+All five games are playable.
 
 ## Wallet and daily credit
 
@@ -21,7 +21,7 @@ zone. The X4 Pro simulator uses the computer's date through its clock HAL.
 Dates from 2024 through 2099 are accepted. With no trusted server, deliberately
 moving the device clock forward can grant credits early.
 
-All four games use the same wallet and daily-credit date. All amounts use integer
+All five games use the same wallet and daily-credit date. All amounts use integer
 cents, including half-dollar blackjack and surrender payments and Baccarat's
 Banker commission. New bets are whole dollars, starting at $1, and cannot exceed the
 available wallet. Quick bets are $10, $20, $40, and $80; Custom bet opens a
@@ -172,22 +172,96 @@ The local monochrome interface labels the result's number and color, so the
 red/black distinction remains readable on e-ink. Sharp buttons, paged bet
 choices, and deliberate reveals match the other Casino tables.
 
+## Farkle rules and controls
+
+Farkle follows the normal-dice scoring and turn rules shown in the Kingdom Come:
+Deliverance II in-game codex ([turn rules](https://us.v-cdn.net/6036147/uploads/0MZDAUMNIEKI/how-to-play-farkle-in-kcd2.jpg),
+[scoring combinations](https://cdn.shazoo.ru/779720_vw21QdF_dice.jpg)). Both players
+use six fair dice. There are no loaded dice, special die effects, or badges.
+The computer strategy and monochrome interface are this implementation's own.
+
+Choose a stake and a target of 1,500, 2,000, or 4,000 points; 4,000 is the
+default. Play Farkle reserves the stake from the shared wallet. You go first.
+The first player to bank enough points to reach the target wins immediately;
+the other player does not receive a final turn. A win returns twice the stake,
+including the original stake, while a loss returns nothing. For example, a
+$10 wager returns $20 on a win, for a $10 net profit.
+
+Roll dice, then tap the dice you want to score. Selected dice are black with
+contrasting pips; previously held dice are softened and labelled Held. Every
+die in the selection must belong to a scoring combination. The table displays
+both banked scores, the current turn's points, and the selected points before
+you commit. Use either:
+
+- **Score & roll** to add the selected points to the current turn, set those
+  dice aside, and roll the remaining dice.
+- **Score & pass** to add the selection and bank the entire turn's points,
+  then end the turn. There is no minimum opening score.
+
+A throw without any scoring dice is a bust: all unbanked points from that
+turn are lost, while points banked on earlier turns remain safe. If all six
+dice have scored, Score & roll rolls all six again and carries forward the
+turn's points. You may instead bank them with Score & pass. Combinations must
+come from one throw; dice held from earlier throws cannot complete a later
+combination. Three pairs and full houses have no special bonus, although any
+ordinary scoring groups within them still count.
+
+| Combination from one throw | Points |
+| --- | --- |
+| Single 1 | 100 |
+| Single 5 | 50 |
+| Three 1s | 1,000 |
+| Three 2s | 200 |
+| Three 3s | 300 |
+| Three 4s | 400 |
+| Three 5s | 500 |
+| Three 6s | 600 |
+| Four of a kind | 2× that face's three-of-a-kind score |
+| Five of a kind | 4× that face's three-of-a-kind score |
+| Six of a kind | 8× that face's three-of-a-kind score |
+| 1, 2, 3, 4, 5 | 500 |
+| 2, 3, 4, 5, 6 | 750 |
+| 1, 2, 3, 4, 5, 6 | 1,500 |
+
+Separate scoring groups in the same throw can be combined. For example,
+three 2s and a 1 score 300, and a 1–5 straight with another 5 scores 550.
+The engine uses the highest valid total for the chosen dice.
+
+**Scoring** remains available at the top of the Farkle table before a match,
+during either player's turn, and on the result screen. It opens the complete
+combinations table; further pages explain the turn rules. Back returns to the
+same match without making a move or changing the tentative selection.
+
+The opponent's roll, selected dice, and intended action are visible. Press
+Continue to let it score and pass or score and roll; turn changes and opening
+rolls also require a button press. Its strategy chooses a scoring selection
+and weighs the turn points, remaining dice, and score gap, without inspecting
+future rolls. There is no automatic animation or timer advancing the match.
+
+Leaving, sleeping, or restarting resumes the saved match, including the same
+dice, held dice, scores, turn, and reserved wager. Tapping dice changes only a
+tentative selection; committing a roll or bank saves the result. Reopening a
+match clears any uncommitted selection. A settled match credits its winnings
+only once. New match returns to the stake and target choices.
+
 ## Persistence and resource use
 
 `/.crosspoint/casino.bin` stores the shared wallet and credited date plus each
 game's wagers, phase, and settlement, including Blackjack's shoe and active
 hand, Baccarat's shoe and reveal position, Roulette's draft bets or locked
-spin, and Slots' symbols and reveal position. The explicit version-5 format
-is 1,257 bytes with a version and CRC32, adding 21 bytes to version 4 for
-Slots. It
-never serializes native struct padding or pointers. Legacy 594-byte version-1
+spin, Slots' symbols and reveal position, and Farkle's dice, held/rolled masks,
+player scores, turn points, target, active player, and turn outcome. The explicit
+version-6 format is 1,300 bytes with a version and CRC32, adding 43 bytes to
+version 5 for Farkle. It never serializes native struct padding or pointers. Legacy 594-byte version-1
 files load with their exact wallet, date, Blackjack shoe, and current hand;
 Baccarat starts with an unused shoe. Version-2 files preserve both games and
 the wallet; their completed Baccarat rounds load fully revealed without paying
 again. Version-3 files also preserve partially revealed Baccarat rounds.
 Versions 1–3 start Roulette with an empty draft. Version-4 files preserve all
 three existing games, including pending Roulette spins. Versions 1–4 start
-Slots with an empty betting state. The next successful save upgrades the
+Slots with an empty betting state. Version-5 files preserve all four existing
+games, including pending Slots reveals. Versions 1–5 start Farkle with an empty
+betting state and the default 4,000-point target. The next successful save upgrades the
 file while preserving the legacy snapshot as the backup. The store
 writes and verifies `casino.tmp`, preserves `casino.bak`, then installs the
 new primary. Reads recover from a valid backup or temporary file if needed;
@@ -195,9 +269,12 @@ unrecoverable files produce an error instead of resetting the wallet.
 
 Every successful gameplay action and daily credit saves the complete state.
 Baccarat and Slots save each individual reveal. Roulette saves draft changes,
-Spin, Reveal result, and the next-round choice. Cards, reel symbols, or a locked pocket, reveal
-progress, wagers, and wallet share one snapshot, so recovery cannot combine
-a pending reveal with an already-paid wallet or pay a completed round twice.
+Spin, Reveal result, and the next-round choice. Farkle saves match start, each
+roll, scored reroll, bank, turn change, and new-match choice; merely selecting
+dice does not write to the SD card. Cards, reel symbols, a locked pocket, dice,
+reveal or turn progress, wagers, and wallet share one snapshot, so recovery
+cannot combine a pending result with an already-paid wallet or pay a completed
+game twice.
 Leaving, sleeping, or restarting resumes the same round and never settles an
 already settled round again. A failed write pauses gameplay and retains the
 changed state in RAM for Retry, blocking automatic sleep and control-center
@@ -205,28 +282,29 @@ entry. Forced power-off before a successful retry can still lose that last
 change; the previous valid snapshot remains the recovery point. Filesystem
 failure or manual SD-file edits are not a secure multiplayer economy.
 
-All four games use fixed arrays: Blackjack has four player hands, one dealer
+All five games use fixed arrays: Blackjack has four player hands, one dealer
 hand, and 312 shoe cards; Baccarat has two three-card hands and 416 shoe cards;
-Roulette has 16 bet entries; Slots has three symbols. Their states are 608,
-448, 280, and 24 bytes on the host. Persistence uses one checked 1,360-byte
-scratch allocation during load
-or verification, released on return,
-and 128-byte stream buffers. Keeping the scratch snapshot off the task stack
+Roulette has 16 bet entries; Slots has three symbols; Farkle has six dice and
+two player scores. Their states are 608, 448, 280, 24, and 48 bytes on the host.
+Persistence uses one checked 1,408-byte scratch allocation during load or
+verification, released on return, and 128-byte stream buffers. Adding Farkle
+increases that existing allocation by 48 bytes without adding another one. Keeping the scratch snapshot off the task stack
 preserves live state when a read or verification fails without adding a
 permanent static buffer.
 The UI reuses the existing framebuffer and Pomodoro number font for bet amounts.
 The lobby balance uses a generated proportional Noto Sans subset with 2,012 bitmap
 bytes stored in flash and no runtime font buffer. Regenerate it with
 `python scripts/generate_balance_font.py` from the bundled, OFL-licensed source.
-There are no background tasks or per-card heap allocations. The activity is
+The Farkle engine has no heap allocations. There are no background tasks or
+per-card or per-roll heap allocations. The activity is
 allocated once on entry with checked allocation and released on exit.
 
 ## Verification
 
 ```sh
 cmake -S test -B build/host-tests
-cmake --build build/host-tests --target BlackjackGameTest BaccaratGameTest RouletteGameTest SlotsGameTest CasinoStoreTest CasinoDateTest
-ctest --test-dir build/host-tests -R '^(BlackjackGame|BaccaratGame|RouletteGame|SlotsGame|CasinoPersistence|CasinoDate)\.' --output-on-failure
+cmake --build build/host-tests --target BlackjackGameTest BaccaratGameTest RouletteGameTest SlotsGameTest FarkleGameTest CasinoStoreTest CasinoDateTest
+ctest --test-dir build/host-tests -R '^(BlackjackGame|BaccaratGame|RouletteGame|SlotsGame|FarkleGame|CasinoPersistence|CasinoDate)\.' --output-on-failure
 pio run -e simulator_x4_pro
 pio run -e x4pro
 ```
@@ -251,12 +329,26 @@ cover maximum jackpots, insufficient funds, every reveal/resume position,
 rejection sampling, direct repeat spins, and malformed snapshots. Persistence
 tests check reserved stakes, withheld returns, final-reveal retries, and
 version-4 migration with an existing pending game.
+Farkle's 18 engine tests include every ordered throw of one through six dice
+(55,986 throws), checked against independent scoring partitions, and 100 seeded
+complete matches with validation and restoration after every action. Other
+checks cover held-die isolation, hot dice, busts, immediate wins, computer
+choices, fair sampling, input validation, overflow, and malformed states.
+Nine additional persistence tests cover version-5 migration with all four
+existing games pending, every Farkle phase, wallet settlement, insufficient
+funds, maximum returns, interrupted saves, retry, backup recovery, and corruption.
 
 On the X4 Pro, check card readability, touch targets, all four orientations,
 sleep/reopen during a hand, between Baccarat or Slots reveals, or before a
-Roulette reveal, persistence after restart, and daily rollover with a correct clock.
+Roulette reveal or Farkle decision, persistence after restart, and daily rollover
+with a correct clock.
 For Roulette, also check all bet categories, paging, removing bets, combined
 stakes, and Same bets after changing the wallet in another game.
+For Farkle, check dice selection with touch and physical buttons, scoring-table
+access during both players' turns, invalid selections, holding and rerolling,
+hot dice, busts, passing, opponent decisions, and one complete match. Leave and
+reopen during a turn, then restart the device and confirm the dice, scores, and
+wallet are unchanged. Confirm a finished match cannot pay again after reopening.
 Monitor serial heap before entering and after leaving Casino;
 confirm free heap stays above 50 KB and returns to its prior range after exit.
 Physical e-ink refresh quality and real RTC/SD behavior require device testing.
