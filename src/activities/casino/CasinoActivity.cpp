@@ -164,8 +164,16 @@ void CasinoActivity::refresh() {
 }
 
 bool CasinoActivity::handleHomeGesture() {
-  goBack();
-  requestUpdate(true);
+  RenderLock lock;
+  if (dirty) {
+    view = View::StorageError;
+    selectedControl = RETRY;
+    refresh();
+    requestUpdate(true);
+  } else {
+    lock.unlock();
+    onGoHome(HomeMenuItem::APPS);
+  }
   return true;
 }
 
@@ -192,7 +200,7 @@ void CasinoActivity::goBack() {
                                                     : BLACKJACK;
   } else {
     lock.unlock();
-    onGoHome(HomeMenuItem::CASINO);
+    activityManager.goToApps(AppMenuItem::CASINO);
     return;
   }
   refresh();

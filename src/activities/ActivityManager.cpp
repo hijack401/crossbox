@@ -11,6 +11,7 @@
 
 #include "CrossPointSettings.h"
 #include "OpdsServerStore.h"
+#include "apps/AppsActivity.h"
 #include "boot_sleep/BootActivity.h"
 #include "boot_sleep/SleepActivity.h"
 #include "browser/OpdsBookBrowserActivity.h"
@@ -249,6 +250,15 @@ void ActivityManager::goToUsbDrive() {
 
 void ActivityManager::goToSettings() { replaceActivity(std::make_unique<SettingsActivity>(renderer, mappedInput)); }
 
+void ActivityManager::goToApps(AppMenuItem initialMenuItem) {
+  auto activity = makeUniqueNoThrow<AppsActivity>(renderer, mappedInput, initialMenuItem);
+  if (!activity) {
+    LOG_ERR("ACT", "OOM: Apps activity");
+    return;
+  }
+  replaceActivity(std::move(activity));
+}
+
 void ActivityManager::goToTodoList() {
   auto activity = makeUniqueNoThrow<TodoListActivity>(renderer, mappedInput);
   if (!activity) {
@@ -345,12 +355,9 @@ void ActivityManager::goHome(HomeMenuItem initialMenuItem, bool cleanInitialRefr
       initialMenuItem = HomeMenuItem::FILE_TRANSFER;
     } else if (activityName == "Settings") {
       initialMenuItem = HomeMenuItem::SETTINGS_MENU;
-    } else if (activityName == "TodoList") {
-      initialMenuItem = HomeMenuItem::TODO_LIST;
-    } else if (activityName == "Pomodoro") {
-      initialMenuItem = HomeMenuItem::POMODORO;
-    } else if (activityName == "Casino") {
-      initialMenuItem = HomeMenuItem::CASINO;
+    } else if (activityName == "Apps" || activityName == "TodoList" || activityName == "Pomodoro" ||
+               activityName == "Casino") {
+      initialMenuItem = HomeMenuItem::APPS;
     }
   }
   replaceActivity(std::make_unique<HomeActivity>(renderer, mappedInput, initialMenuItem, cleanInitialRefresh));

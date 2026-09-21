@@ -1,6 +1,6 @@
 # Pomodoro timer
 
-Open **Pomodoro** below **Settings** on Home. Choose 25, 50, or 90 minutes,
+Open **Home → Apps → Pomodoro**. Choose 25, 50, or 90 minutes,
 or use **Custom duration** to select 1–180 minutes. Press **Focus** to start.
 Custom duration shows a large minute readout, a wide drag slider, and one-minute
 decrement/increment buttons. **Set duration** applies the draft; Back discards it.
@@ -8,9 +8,9 @@ Physical Left/Right buttons change one minute, and side buttons change five.
 The minimal screen shows minutes and seconds remaining in bold, angular Chakra Petch digits,
 with a thin remaining-time bar and Pause / Resume and End session controls.
 The bar starts full and empties as time passes; pausing also holds the bar.
-Swipe right from the left edge
-or use Home to go back; during a session this asks before ending it. Button-only
-devices keep their physical button hints.
+Back (or swiping right from the left edge) returns from the timer to Apps;
+Home returns directly to the main menu. During a running or paused session,
+both ask before ending it. Button-only devices keep their physical button hints.
 Pomodoro buttons and the duration slider have square corners in every theme.
 
 At zero, a clean refresh reveals a square checkmark, **Session complete**, and

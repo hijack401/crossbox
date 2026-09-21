@@ -45,11 +45,7 @@ class HomeActivity final : public Activity {
     ++i;
     if (item == HomeMenuItem::SETTINGS_MENU) return i;
     ++i;
-    if (item == HomeMenuItem::TODO_LIST) return i;
-    ++i;
-    if (item == HomeMenuItem::POMODORO) return i;
-    ++i;
-    if (item == HomeMenuItem::CASINO) return i;
+    if (item == HomeMenuItem::APPS) return i;
     return 0;
   }
 
@@ -61,18 +57,14 @@ class HomeActivity final : public Activity {
     if (hasOpdsUrl && idx == i++) return HomeMenuItem::OPDS_BROWSER;
     if (idx == i++) return HomeMenuItem::FILE_TRANSFER;
     if (idx == i++) return HomeMenuItem::SETTINGS_MENU;
-    if (idx == i++) return HomeMenuItem::TODO_LIST;
-    if (idx == i++) return HomeMenuItem::POMODORO;
-    if (idx == i) return HomeMenuItem::CASINO;
+    if (idx == i) return HomeMenuItem::APPS;
     return HomeMenuItem::NONE;
   }
   void onSelectBook(const std::string& path);
   void onFileBrowserOpen();
   void onLibraryOpen();
   void onSettingsOpen();
-  void onTodoListOpen();
-  void onPomodoroOpen();
-  void onCasinoOpen();
+  void onAppsOpen();
   void onFileTransferOpen();
   void onOpdsBrowserOpen();
 

@@ -1,7 +1,7 @@
 # Casino
 
 Casino is a local game using virtual dollars. It has no deposits, purchases,
-withdrawals, or network play. Find it after Pomodoro on Home. The lobby shows
+withdrawals, or network play. Open **Home → Apps → Casino**. The lobby shows
 the wallet and Slots, Blackjack, Roulette, and Baccarat, in that order.
 All four games are playable.
 
@@ -88,7 +88,8 @@ with the following explicit house rules:
 Each completed round displays its net result including insurance. Split hands
 can be inspected individually with the Hand buttons. The Rules screen explains
 all actions on the device. Tap buttons, or use directional keys and Confirm;
-Back returns to the lobby, then Home.
+Back returns to the lobby, then Apps. Home returns directly to the main menu.
+If a save has failed, both remain blocked until the pending changes are saved.
 
 ## Baccarat table rules
 

@@ -37,7 +37,7 @@ void TodoListActivity::onExit() {
 }
 
 bool TodoListActivity::handleHomeGesture() {
-  goBack();
+  goBack(true);
   requestUpdate(true);
   return true;
 }
@@ -119,24 +119,35 @@ void TodoListActivity::acceptText(const ActivityResult& result) {
   refresh();
 }
 
-void TodoListActivity::goBack() {
+void TodoListActivity::goBack(const bool home) {
   RenderLock lock;
-  if (view == View::ConfirmDelete || view == View::Notice) {
+  if (home) {
+    if (!dirty) {
+      lock.unlock();
+      onGoHome(HomeMenuItem::APPS);
+      return;
+    }
+    view = View::ConfirmDiscard;
+    selectedControl = CANCEL;
+    discardToHome = true;
+  } else if (view == View::ConfirmDelete || view == View::Notice) {
     view = returnView;
     selectedControl = view == View::Detail ? EDIT : view == View::Selection ? SELECT_ALL : ADD;
   } else if (view == View::ConfirmDiscard) {
     view = View::StorageError;
     selectedControl = RETRY;
+    discardToHome = false;
   } else if (view == View::StorageError && dirty) {
     view = View::ConfirmDiscard;
     selectedControl = CANCEL;
+    discardToHome = false;
   } else if (view == View::Selection || view == View::Detail) {
     view = View::List;
     selection = 0;
     selectedControl = ADD;
   } else {
     lock.unlock();
-    onGoHome(HomeMenuItem::TODO_LIST);
+    activityManager.goToApps(AppMenuItem::TODO_LIST);
     return;
   }
   refresh();
@@ -167,6 +178,7 @@ void TodoListActivity::activate(const int control) {
     } else if (control == DISCARD) {
       view = View::ConfirmDiscard;
       selectedControl = CANCEL;
+      discardToHome = false;
     }
     refresh();
     return;
@@ -175,7 +187,11 @@ void TodoListActivity::activate(const int control) {
     if (control == CONFIRM_DISCARD) {
       dirty = false;
       lock.unlock();
-      onGoHome(HomeMenuItem::TODO_LIST);
+      if (discardToHome) {
+        onGoHome(HomeMenuItem::APPS);
+      } else {
+        activityManager.goToApps(AppMenuItem::TODO_LIST);
+      }
     }
     return;
   }

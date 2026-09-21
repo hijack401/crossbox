@@ -1,6 +1,6 @@
 # Todolist
 
-Open **Todolist** between **Settings** and **Pomodoro** on Home.
+Open **Home → Apps → Todolist**.
 
 - **Add task** opens the device keyboard. Tap its OK key to save.
 - Tap a checkbox to complete a task. It stays in the list with a checkmark
@@ -11,8 +11,10 @@ Open **Todolist** between **Settings** and **Pomodoro** on Home.
 - **Delete all** is available in Select mode. Deletion asks for confirmation;
   Cancel preserves the tasks and selection.
 - Swipe up/down or use Previous/Next to page. Physical navigation buttons move
-  focus between controls; Confirm activates the focused control. Back or the
-  Home gesture exits the current detail/selection screen before leaving the list.
+  focus between controls; Confirm activates the focused control. Back exits the
+  current detail/selection screen, then returns from the list to Apps. Home
+  returns directly to the main menu. Unsaved changes require saving or explicit
+  discard before leaving.
 
 The list supports 64 tasks with up to 127 UTF-8 bytes per task. All tasks remain
 available through pagination; completed tasks are never hidden or automatically

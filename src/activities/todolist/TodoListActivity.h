@@ -61,6 +61,7 @@ class TodoListActivity final : public Activity, private UiAppHost {
   View returnView = View::List;
   bool deleteAll = false;
   bool dirty = false;
+  bool discardToHome = false;
   bool loadFailed = false;
   bool buttonNavigation = false;
   StrId notice = StrId::STR_TODO_INVALID;
@@ -82,7 +83,7 @@ class TodoListActivity final : public Activity, private UiAppHost {
   void acceptText(const ActivityResult& result);
   bool saveChanges();
   void refresh();
-  void goBack();
+  void goBack(bool home = false);
   void changePage(int delta);
   int selectedCount() const;
   uint64_t allItems() const;

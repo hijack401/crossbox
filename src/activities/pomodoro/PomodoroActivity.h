@@ -35,6 +35,7 @@ class PomodoroActivity final : public Activity, private UiAppHost {
   uint32_t lastDurationStepAt = 0;
   bool cleanRefresh = true;
   bool exitAfterStop = false;
+  bool exitToHome = false;
   bool buttonNavigation = false;
   bool draggingDuration = false;
 
@@ -50,7 +51,7 @@ class PomodoroActivity final : public Activity, private UiAppHost {
   void drawControl(UiScreen& screen, freeink::ui::Rect rect, const char* label, int control, bool primary = false,
                    bool checked = false, freeink::ui::ActionId action = ACTION_CONTROL, bool enabled = true);
   void activate(int control);
-  void goBack();
+  void goBack(bool home = false);
   void selectCustomDuration();
   void setDraftMinutes(int minutes);
   void handleDurationButtons();

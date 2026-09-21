@@ -39,7 +39,7 @@ bool PomodoroActivity::allowsControlCenter() const {
 }
 
 bool PomodoroActivity::handleHomeGesture() {
-  goBack();
+  goBack(true);
   requestUpdate(true);  // Home gestures return before the manager's deferred repaint.
   return true;
 }
@@ -107,25 +107,33 @@ void PomodoroActivity::handleDurationButtons() {
   }
 }
 
-void PomodoroActivity::goBack() {
+void PomodoroActivity::goBack(const bool home) {
   RenderLock lock;
   updateTimer(millis());
   app.clearTapFlash();
   closeRouting();
-  if (view == View::Duration) {
+  if (home && !timer.isRunning() && !timer.isPaused()) {
+    lock.unlock();
+    onGoHome(HomeMenuItem::APPS);
+    return;
+  }
+  if (!home && view == View::Duration) {
     view = View::Setup;
     selectedControl = 3;
     draggingDuration = false;
-  } else if (view == View::StopPrompt) {
+  } else if (!home && view == View::StopPrompt) {
     view = View::Session;
     selectedControl = 0;
+    exitAfterStop = false;
+    exitToHome = false;
   } else if (timer.isRunning() || timer.isPaused()) {
     view = View::StopPrompt;
     selectedControl = 0;
     exitAfterStop = true;
+    exitToHome = home;
   } else {
     lock.unlock();
-    onGoHome(HomeMenuItem::POMODORO);
+    activityManager.goToApps(AppMenuItem::POMODORO);
     return;
   }
   cleanRefresh = true;
@@ -161,11 +169,17 @@ void PomodoroActivity::activate(const int control) {
   } else if (view == View::StopPrompt) {
     if (control == 0) {
       view = View::Session;
+      exitAfterStop = false;
+      exitToHome = false;
     } else if (control == 1) {
       timer.reset();
       if (exitAfterStop) {
         lock.unlock();
-        onGoHome(HomeMenuItem::POMODORO);
+        if (exitToHome) {
+          onGoHome(HomeMenuItem::APPS);
+        } else {
+          activityManager.goToApps(AppMenuItem::POMODORO);
+        }
         return;
       }
       view = View::Setup;
@@ -178,7 +192,7 @@ void PomodoroActivity::activate(const int control) {
       startSession();
     } else if (control == 1) {
       lock.unlock();
-      onGoHome(HomeMenuItem::POMODORO);
+      activityManager.goToApps(AppMenuItem::POMODORO);
       return;
     }
   } else if (control == 0) {
@@ -192,6 +206,7 @@ void PomodoroActivity::activate(const int control) {
   } else if (control == 1) {
     view = View::StopPrompt;
     exitAfterStop = false;
+    exitToHome = false;
     selectedControl = 0;
     cleanRefresh = true;
   }

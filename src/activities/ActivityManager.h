@@ -17,17 +17,9 @@
 class Activity;    // forward declaration
 class RenderLock;  // forward declaration
 
-enum class HomeMenuItem {
-  NONE,
-  FILE_BROWSER,
-  LIBRARY,
-  OPDS_BROWSER,
-  FILE_TRANSFER,
-  SETTINGS_MENU,
-  TODO_LIST,
-  POMODORO,
-  CASINO
-};
+enum class HomeMenuItem { NONE, FILE_BROWSER, LIBRARY, OPDS_BROWSER, FILE_TRANSFER, SETTINGS_MENU, APPS };
+
+enum class AppMenuItem { TODO_LIST, POMODORO, CASINO };
 
 /**
  * ActivityManager
@@ -94,6 +86,7 @@ class ActivityManager {
   void goToFileTransfer();
   void goToUsbDrive();
   void goToSettings();
+  void goToApps(AppMenuItem initialMenuItem = AppMenuItem::TODO_LIST);
   void goToTodoList();
   void goToPomodoro();
   void goToCasino();
